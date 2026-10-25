@@ -12,6 +12,8 @@ git -C "$1" apply --check "$tc/mesa-dzn-depth-typeless.patch" 2>/dev/null && git
 git -C "$1" apply --check "$tc/mesa-dzn-bufpool.patch" 2>/dev/null && git -C "$1" apply "$tc/mesa-dzn-bufpool.patch"
 # Keep D3D12 PSOs across runs in an ID3D12PipelineLibrary file named by DZN_PSO_LIBRARY (RPCS3 sets it per game).
 git -C "$1" apply --check "$tc/mesa-dzn-psolib.patch" 2>/dev/null && git -C "$1" apply "$tc/mesa-dzn-psolib.patch"
+# Skip empty image-to-image copies (zero-sized boxes break the D3D12 command list on the Xbox).
+git -C "$1" apply --check "$tc/mesa-dzn-empty-copy.patch" 2>/dev/null && git -C "$1" apply "$tc/mesa-dzn-empty-copy.patch"
 # D3D12 command-list call tracer (logs the last calls when a command list fails to close).
 cp "$tc/mesa-dzn_trace.c" "$1/src/microsoft/vulkan/dzn_trace.c"
 cp "$tc/mesa-dzn_trace_macros.h" "$1/src/microsoft/vulkan/dzn_trace_macros.h"
