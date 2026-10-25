@@ -907,6 +907,7 @@ namespace uwp_telemetry
 			const auto version = std::find_if(lines.begin(), lines.end(), [](const std::string& l) { return l.starts_with("v="); });
 			const bool updated = version == lines.end() || version->substr(2) != c_app_version;
 			fs::remove_file(session_file());
+			tel_log.notice("The previous run ended during '%s' (%s): fatal %d, suspended %d, updated %d", title, kind, fatal, suspended, updated);
 
 			if (!fatal && (suspended || updated))
 			{
@@ -1119,9 +1120,21 @@ namespace uwp_telemetry
 
 	void on_suspend()
 	{
-		std::lock_guard lock(g_mutex);
-		if (g_in_game && g_consent == consent::yes && fs::is_file(session_file()))
-			fs::write_file(session_file(), fs::write + fs::append, std::string_view{"suspended\n"});
+		{
+			std::lock_guard lock(g_mutex);
+			const bool marker = fs::is_file(session_file());
+			if (g_in_game && g_consent == consent::yes && marker)
+			{
+				const bool ok = fs::write_file<true>(session_file(), fs::write + fs::append, std::string_view{"suspended\n"});
+				tel_log.notice("Suspended: session %s", ok ? "marked" : fmt::format("not marked (%s)", fs::g_tls_error));
+			}
+			else
+			{
+				tel_log.notice("Suspended: session not marked (in game %d, consent %d, marker %d)", g_in_game, g_consent == consent::yes, marker);
+			}
+		}
+		// The app can be closed while suspended without running again: get these lines to disk now.
+		logs::listener::sync_all();
 	}
 
 	void on_resume()
@@ -1135,6 +1148,7 @@ namespace uwp_telemetry
 		{
 			text.erase(pos);
 			fs::write_file(session_file(), fs::rewrite, text);
+			tel_log.notice("Resumed: suspend mark removed");
 		}
 	}
 
