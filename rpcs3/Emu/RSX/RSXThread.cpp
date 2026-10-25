@@ -167,7 +167,9 @@ namespace rsx
 
 	// Samples g_uwp_rsx_where every 1 ms. Frames of 60 ms or more are logged with their most common
 	// samples and the RSX thread's CPU time (low CPU time = it was waiting or not scheduled).
-	static void uwp_rsx_sampler(const thread_base* rsx_thread, const atomic_t<bool>* stop)
+	// A fatal error ends the RSX thread without unwinding its stack, so the stop flag is shared on the
+	// heap, and the sampler also ends when the next RSX run starts (the old thread object is gone then).
+	static void uwp_rsx_sampler(const thread_base* rsx_thread, std::shared_ptr<atomic_t<bool>> stop, u32 run)
 	{
 		static constexpr const char* names[uwp_phase_count] = { "other", "fifo", "fifo idle", "method", "flip", "local task",
 			"zcull", "fifo wait", "external pause", "semaphore", "frame limit", "submit", "query", "fence", "invalidate",
@@ -179,7 +181,7 @@ namespace rsx
 		u32 frame = g_uwp_rsx_frame.observe(), samples = 0, logged = 0;
 		u64 start = get_system_time(), cpu_start = rsx_thread->get_cpu_time_us();
 
-		while (!stop->observe())
+		while (!stop->observe() && g_uwp_rsx_runs.observe() == run)
 		{
 			std::this_thread::sleep_for(1ms);
 
@@ -1398,13 +1400,13 @@ namespace rsx
 
 		struct uwp_sampler
 		{
-			atomic_t<bool> stop = false;
+			std::shared_ptr<atomic_t<bool>> stop = std::make_shared<atomic_t<bool>>(false);
 			std::thread thread;
-			~uwp_sampler() { stop.release(true); if (thread.joinable()) thread.join(); }
+			~uwp_sampler() { stop->release(true); if (thread.joinable()) thread.join(); }
 		} uwp_sampler_obj;
 
 		if (const thread_base* self = thread_ctrl::get_current())
-			uwp_sampler_obj.thread = std::thread(uwp_rsx_sampler, self, &uwp_sampler_obj.stop);
+			uwp_sampler_obj.thread = std::thread(uwp_rsx_sampler, self, uwp_sampler_obj.stop, g_uwp_rsx_runs.load());
 #endif
 
 		if (g_cfg.core.thread_scheduler != thread_scheduler_mode::os)
