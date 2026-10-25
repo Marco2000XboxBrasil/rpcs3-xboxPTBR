@@ -1125,7 +1125,8 @@ namespace uwp_telemetry
 			const bool marker = fs::is_file(session_file());
 			if (g_in_game && g_consent == consent::yes && marker)
 			{
-				const bool ok = fs::write_file<true>(session_file(), fs::write + fs::append, std::string_view{"suspended\n"});
+				// A std::string: fs::file::write() takes a string_view as a POD and writes its 16 bytes, not the text.
+				const bool ok = fs::write_file<true>(session_file(), fs::write + fs::append, std::string{"suspended\n"});
 				tel_log.notice("Suspended: session %s", ok ? "marked" : fmt::format("not marked (%s)", fs::g_tls_error));
 			}
 			else
