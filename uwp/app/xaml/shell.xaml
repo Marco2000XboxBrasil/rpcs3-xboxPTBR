@@ -172,26 +172,147 @@
     </Border>
   </Grid>
 
-  <!-- In-game pause menu (View + Menu, the PS button). -->
+  <!-- In-game pause menu (View + Menu, the PS button): a pane that slides in from the left over the
+       dimmed game. Main page: the actions; Settings opens a page of groups, each group its settings. -->
   <Grid x:Name="PauseLayer" Visibility="Collapsed">
-    <Rectangle Fill="#99000000"/>
-    <Border Background="#FF2B2B2B" BorderBrush="#FF3A3A3A" BorderThickness="1" CornerRadius="8"
-            HorizontalAlignment="Center" VerticalAlignment="Center" Padding="24" Width="560">
-      <ScrollViewer x:Name="PauseScroll" MaxHeight="460" VerticalScrollBarVisibility="Auto">
-        <StackPanel>
-          <TextBlock FontSize="22" FontWeight="SemiBold" Margin="0,0,0,14">Paused</TextBlock>
-          <Button x:Name="PauseResume" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Resume game" Margin="0,0,0,8"/>
-          <Button x:Name="PauseRestart" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Restart game" Margin="0,0,0,8"/>
-          <Button x:Name="PauseTrophies" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Trophies" Margin="0,0,0,8"/>
-          <Button x:Name="PauseFriends" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Friends (RPCN)" Margin="0,0,0,8"/>
-          <Button x:Name="PauseScreenshot" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Take a screenshot" Margin="0,0,0,8"/>
-          <Button x:Name="PauseSaveState" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Save state" Margin="0,0,0,8"/>
-          <Button x:Name="PauseLoadState" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Load a save state" Margin="0,0,0,8"/>
-          <Button x:Name="PauseStop" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Stop game and return to the menu" Margin="0,0,0,16"/>
-          <TextBlock FontSize="14" Opacity="0.6" TextWrapping="Wrap" Margin="0,0,0,6">The running game's settings, as in RPCS3's own menu. They apply right away and are kept for later games. The rest are on the Settings tab of the app menu.</TextBlock>
-          <StackPanel x:Name="PauseSettingsStack"/>
+    <Rectangle Fill="#73000000"/>
+    <Border x:Name="PausePane" HorizontalAlignment="Left" Width="540" Background="#F21F1F1F"
+            BorderBrush="#FF3A3A3A" BorderThickness="0,0,1,0" Padding="32,36,24,24">
+      <Border.Transitions>
+        <TransitionCollection>
+          <EntranceThemeTransition FromHorizontalOffset="-540" FromVerticalOffset="0"/>
+        </TransitionCollection>
+      </Border.Transitions>
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="*"/>
+          <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <StackPanel Grid.Row="0" Margin="0,0,0,18">
+          <TextBlock x:Name="PauseTitle" FontSize="26" FontWeight="SemiBold">Paused</TextBlock>
+          <TextBlock x:Name="PauseSubtitle" FontSize="13" Opacity="0.6" TextWrapping="Wrap" Margin="0,4,0,0"/>
         </StackPanel>
-      </ScrollViewer>
+        <ScrollViewer x:Name="PauseScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto">
+          <Grid Margin="0,0,12,0">
+            <StackPanel x:Name="PauseMain">
+              <StackPanel.ChildrenTransitions>
+                <TransitionCollection>
+                  <EntranceThemeTransition FromHorizontalOffset="-40" FromVerticalOffset="0" IsStaggeringEnabled="True"/>
+                </TransitionCollection>
+              </StackPanel.ChildrenTransitions>
+              <Button x:Name="PauseResume" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,6" Padding="14,12,14,12">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE768;" FontSize="20" Margin="0,0,16,0" VerticalAlignment="Center"/>
+                  <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="16">Resume game</TextBlock>
+                </Grid>
+              </Button>
+              <Button x:Name="PauseRestart" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,6" Padding="14,12,14,12">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE72C;" FontSize="20" Margin="0,0,16,0" VerticalAlignment="Center"/>
+                  <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="16">Restart game</TextBlock>
+                </Grid>
+              </Button>
+              <Button x:Name="PauseTrophies" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,6" Padding="14,12,14,12">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE734;" FontSize="20" Margin="0,0,16,0" VerticalAlignment="Center"/>
+                  <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="16">Trophies</TextBlock>
+                </Grid>
+              </Button>
+              <Button x:Name="PauseFriends" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,6" Padding="14,12,14,12">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE716;" FontSize="20" Margin="0,0,16,0" VerticalAlignment="Center"/>
+                  <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="16">Friends</TextBlock>
+                </Grid>
+              </Button>
+              <Button x:Name="PauseScreenshot" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,6" Padding="14,12,14,12">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE722;" FontSize="20" Margin="0,0,16,0" VerticalAlignment="Center"/>
+                  <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="16">Take a screenshot</TextBlock>
+                </Grid>
+              </Button>
+              <Button x:Name="PauseSaveState" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,6" Padding="14,12,14,12">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE74E;" FontSize="20" Margin="0,0,16,0" VerticalAlignment="Center"/>
+                  <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="16">Save state</TextBlock>
+                </Grid>
+              </Button>
+              <Button x:Name="PauseLoadState" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,6" Padding="14,12,14,12">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE81C;" FontSize="20" Margin="0,0,16,0" VerticalAlignment="Center"/>
+                  <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="16">Load a save state</TextBlock>
+                </Grid>
+              </Button>
+              <Button x:Name="PauseSettings" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,6" Padding="14,12,14,12">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE713;" FontSize="20" Margin="0,0,16,0" VerticalAlignment="Center"/>
+                  <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="16">Settings</TextBlock>
+                  <FontIcon Grid.Column="2" FontFamily="Segoe MDL2 Assets" Glyph="&#xE76C;" FontSize="12" Opacity="0.6" VerticalAlignment="Center"/>
+                </Grid>
+              </Button>
+              <Button x:Name="PauseStop" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,12,0,0" Padding="14,12,14,12">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE71A;" FontSize="20" Margin="0,0,16,0" VerticalAlignment="Center"/>
+                  <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="16">Stop game</TextBlock>
+                </Grid>
+              </Button>
+            </StackPanel>
+            <StackPanel x:Name="PauseSettingsStack" Visibility="Collapsed">
+              <StackPanel.ChildrenTransitions>
+                <TransitionCollection>
+                  <EntranceThemeTransition FromHorizontalOffset="40" FromVerticalOffset="0" IsStaggeringEnabled="True"/>
+                </TransitionCollection>
+              </StackPanel.ChildrenTransitions>
+            </StackPanel>
+          </Grid>
+        </ScrollViewer>
+        <TextBlock Grid.Row="2" FontSize="13" Opacity="0.55" Margin="0,12,0,0">A  Select      B  Back</TextBlock>
+      </Grid>
     </Border>
   </Grid>
 

@@ -478,6 +478,7 @@ namespace uwp_xaml
 			com<IControl> screen_scroll_ctl, text_ok_ctl, text_cancel_ctl;
 			com<IPanel> screen_items_panel, text_field_host;
 			com<ITextBlock> t_screen_title, t_screen_header, t_text_title, t_text_prompt, t_text_error;
+			com<ITextBlock> t_pause_title, t_pause_subtitle;
 			com<IBrush> brush[4];
 
 			// Model mirror.
@@ -587,6 +588,8 @@ namespace uwp_xaml
 				screen_scroll_ctl = find_el<IControl>(root, L"ScreenScroll");
 				screen_items_panel = find_el<IPanel>(root, L"ScreenItems");
 				t_screen_title = find_el<ITextBlock>(root, L"ScreenTitle");
+				t_pause_title = find_el<ITextBlock>(root, L"PauseTitle");
+				t_pause_subtitle = find_el<ITextBlock>(root, L"PauseSubtitle");
 				t_screen_header = find_el<ITextBlock>(root, L"ScreenHeader");
 				text_layer = find_el<IUIElement>(root, L"TextLayer");
 				text_field_host = find_el<IPanel>(root, L"TextFieldHost");
@@ -653,6 +656,7 @@ namespace uwp_xaml
 						button->add_Click(make_handler<routed_handler>([fn = std::move(fn)](IInspectable*, IRoutedEventArgs*) { fn(); }).get(), &token);
 				};
 				// The rest of RPCS3's home menu: lists open as screens over the pause menu (B goes back to it).
+				on_click(L"PauseSettings", [this]() { show_pause_page(pause_page::groups); });
 				on_click(L"PauseTrophies", [this]() { screen_last = 0; uwp_frontend::open_trophies(); });
 				on_click(L"PauseFriends", [this]() { screen_last = 0; uwp_frontend::open_friends(); });
 				on_click(L"PauseLoadState", [this]() { screen_last = 0; uwp_frontend::open_load_state(); });
@@ -1054,7 +1058,7 @@ namespace uwp_xaml
 
 			// ---- Settings ----
 			// One row per setting: a label with its note, and a switch (on / off) or a drop-down list.
-			void build_settings(const com<IPanel>& panel, bool in_game_only, com<IControl>* first)
+			void build_settings(const com<IPanel>& panel, bool in_game_only, com<IControl>* first, const std::string* only_section = nullptr)
 			{
 				const auto children = children_of(panel);
 				if (!children)
@@ -1070,7 +1074,9 @@ namespace uwp_xaml
 					const auto& s = settings[i];
 					if (in_game_only ? !s.in_game : s.pause_only)
 						continue;
-					if (in_game_only && !s.section.empty() && s.section != section)
+					if (only_section && s.section != *only_section)
+						continue;
+					if (in_game_only && !only_section && !s.section.empty() && s.section != section)
 					{
 						section = s.section;
 						std::wstring heading = k_xaml_setting_section;
@@ -1370,15 +1376,89 @@ namespace uwp_xaml
 				if (pause_open || !uwp_frontend::in_game() || loading_shown || error_shown)
 					return;
 				pause_open = true;
-				build_settings(pause_settings_panel, true, nullptr);
 				// Entries for what the game has.
 				set_visible(find_el<IUIElement>(root, L"PauseTrophies"), uwp_frontend::has_trophies());
 				set_visible(find_el<IUIElement>(root, L"PauseLoadState"), uwp_frontend::has_save_states());
+				show_pause_page(pause_page::main);
 				set_visible(pause_layer, true);
 				update_gating();
 				uwp_frontend::set_paused(true);
 				request_focus(find_el<IInspectable>(root, L"PauseResume"));
 				xaml_log.notice("Pause menu opened");
+			}
+
+			// The pause pane's pages: the actions, the settings groups, one group's settings.
+			enum class pause_page { main, groups, group };
+			pause_page pause_at = pause_page::main;
+			std::string pause_group;
+
+			void show_pause_page(pause_page page, std::string group = {})
+			{
+				const std::string from = pause_group;
+				pause_at = page;
+				pause_group = std::move(group);
+				set_visible(find_el<IUIElement>(root, L"PauseMain"), page == pause_page::main);
+				set_visible(pause_settings_panel.as<IUIElement>(), page != pause_page::main);
+				if (const auto scroll = pause_scroll_ctl.as<IScrollViewer>())
+					scroll->ScrollToVerticalOffset(0);
+
+				if (page == pause_page::main)
+				{
+					set_text(t_pause_title, "Paused");
+					set_text(t_pause_subtitle, {});
+					if (const auto children = children_of(pause_settings_panel))
+						children->Clear();
+					return;
+				}
+
+				if (page == pause_page::group)
+				{
+					set_text(t_pause_title, pause_group);
+					set_text(t_pause_subtitle, pause_group.starts_with("Advanced")
+						? "These change the game's timing. Wrong values can slow it down, speed it up, hang or crash it."
+						: "Changes apply right away and are kept for later games.");
+					com<IControl> first;
+					build_settings(pause_settings_panel, true, &first, &pause_group);
+					request_focus(first.as<IInspectable>());
+					return;
+				}
+
+				set_text(t_pause_title, "Settings");
+				set_text(t_pause_subtitle, "The running game's settings, as in RPCS3's own menu. The rest are on the Settings tab of the app menu.");
+				const auto children = children_of(pause_settings_panel);
+				if (!children)
+					return;
+				children->Clear();
+				std::vector<std::string> groups;
+				for (const auto& v : uwp_frontend::get_settings())
+				{
+					if (v.in_game && !v.section.empty() && std::find(groups.begin(), groups.end(), v.section) == groups.end())
+						groups.push_back(v.section);
+				}
+				com<IInspectable> focus;
+				for (const std::string& g : groups)
+				{
+					std::wstring markup = k_xaml_pause_entry;
+					replace_all(markup, L"$LABEL$", xml_text(g));
+					// Segoe MDL2 Assets glyphs, as Windows' own Settings app uses them.
+					const wchar_t* glyph = g == "Video" ? L"&#xE7F4;" : g == "Audio" ? L"&#xE767;" : g == "Stats overlay" ? L"&#xE9D9;"
+						: g == "Notifications" ? L"&#xEA8F;" : g == "Input" ? L"&#xE7FC;" : g == "Debug" ? L"&#xEBE8;" : g.starts_with("Advanced") ? L"&#xE950;" : L"&#xE713;";
+					replace_all(markup, L"$GLYPH$", glyph);
+					const com<IInspectable> entry = load_xaml(markup, "pause entry");
+					const auto button = entry.as<IButtonBase>();
+					const auto el = entry.as<IUIElement>();
+					if (!button || !el)
+						continue;
+					int64_t token = 0;
+					button->add_Click(make_handler<routed_handler>([this, g](IInspectable*, IRoutedEventArgs*)
+					{
+						show_pause_page(pause_page::group, g);
+					}).get(), &token);
+					children->Append(el.get());
+					if (!focus || g == from)
+						focus = entry;
+				}
+				request_focus(focus);
 			}
 
 			void close_pause()
@@ -1426,6 +1506,13 @@ namespace uwp_xaml
 					cancel_text();
 				else if (screen_open)
 					uwp_frontend::screen_close();
+				else if (pause_open && pause_at == pause_page::group)
+					show_pause_page(pause_page::groups, pause_group);
+				else if (pause_open && pause_at == pause_page::groups)
+				{
+					show_pause_page(pause_page::main);
+					request_focus(find_el<IInspectable>(root, L"PauseSettings"));
+				}
 				else if (pause_open)
 					close_pause();
 			}
