@@ -233,7 +233,7 @@
           <Button x:Name="PauseResume" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Resume game" Margin="0,0,0,8"/>
           <Button x:Name="PauseRestart" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Restart game" Margin="0,0,0,8"/>
           <Button x:Name="PauseStop" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Stop game and return to the menu" Margin="0,0,0,16"/>
-          <TextBlock FontSize="14" Opacity="0.6" TextWrapping="Wrap" Margin="0,0,0,6">Settings that apply right away. The others take effect the next time a game starts; change them in the app menu.</TextBlock>
+          <TextBlock FontSize="14" Opacity="0.6" TextWrapping="Wrap" Margin="0,0,0,6">The running game's settings, as in RPCS3's own menu. They apply right away and are kept for later games. The rest are on the Settings tab of the app menu.</TextBlock>
           <StackPanel x:Name="PauseSettingsStack"/>
         </StackPanel>
       </ScrollViewer>

@@ -127,6 +127,8 @@ namespace uwp_frontend
 		int current = 0;
 		bool toggle = false;  // exactly false / true: shown as a switch
 		bool in_game = false; // takes effect while a game runs (shown in the pause menu)
+		bool pause_only = false; // not on the Settings tab
+		std::string section;     // pause menu: the group heading
 		bool action = false;  // no value list: a screen that open_setting() opens (RPCN account); `note` stays, `value` is shown
 		std::string value;
 	};
