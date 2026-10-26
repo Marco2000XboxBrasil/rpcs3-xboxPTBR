@@ -1035,11 +1035,20 @@ namespace uwp_xaml
 					first->reset();
 
 				const std::vector<uwp_frontend::setting_view> settings = uwp_frontend::get_settings();
+				std::string section;
 				for (u32 i = 0; i < settings.size(); i++)
 				{
 					const auto& s = settings[i];
-					if (in_game_only && !s.in_game)
+					if (in_game_only ? !s.in_game : s.pause_only)
 						continue;
+					if (in_game_only && !s.section.empty() && s.section != section)
+					{
+						section = s.section;
+						std::wstring heading = k_xaml_setting_section;
+						replace_all(heading, L"$LABEL$", xml_text(section));
+						if (const auto el = load_xaml(heading, "setting section").as<IUIElement>())
+							children->Append(el.get());
+					}
 
 					std::wstring control;
 					if (s.action)

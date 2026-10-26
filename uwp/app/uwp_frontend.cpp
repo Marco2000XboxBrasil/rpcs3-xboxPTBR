@@ -505,6 +505,10 @@ namespace uwp_frontend
 			std::function<void()> on_open;
 			std::function<std::string()> value;
 			std::function<void()> on_change; // set: called instead of saving config.yml
+			// XAML shell only: shown in the in-game pause menu (under `section`) instead of the Settings tab.
+			bool pause = false;
+			std::string section;
+			std::vector<std::string> shown; // what the list shows for each of `values` (empty: the values)
 		};
 
 		struct modal
@@ -2538,9 +2542,108 @@ namespace uwp_frontend
 		}
 
 		// The settings list of the XAML pages; index-stable for the lifetime of the app.
+		// The pause menu's settings: what RPCS3's home menu offers while a game runs (overlay_home_menu_settings.cpp),
+		// minus what has no use on the Xbox (audio backend, fullscreen, mouse and camera, PS Move, recording).
+		// They apply to the running game as they do in the home menu and are saved to config.yml.
+		std::vector<setting_item> make_pause_settings()
+		{
+			std::vector<setting_item> out;
+			const auto add = [&](std::string_view section, std::string label, cfg::_base* node, std::vector<std::string> values, std::string note,
+				std::string_view unit = {}, std::vector<std::string> shown = {})
+			{
+				setting_item item{std::move(label), node, std::move(values), std::move(note)};
+				item.pause = true;
+				item.section = section;
+				if (shown.empty() && !unit.empty())
+				{
+					for (const std::string& v : item.values)
+						shown.push_back(v + std::string(unit));
+				}
+				item.shown = std::move(shown);
+				out.push_back(std::move(item));
+			};
+			const auto range = [](s64 from, s64 to, s64 step)
+			{
+				std::vector<std::string> v;
+				for (s64 i = from; i <= to; i += step)
+					v.push_back(std::to_string(i));
+				return v;
+			};
+			const std::vector<std::string> on_off = {"false", "true"};
+
+			add("Video", "Resolution scale", &g_cfg.video.resolution_scale_percent, {"50", "75", "100", "125", "150", "200", "250", "300"}, "Internal rendering resolution in percent of 720p.", "%");
+			add("Video", "Resolution scale threshold", &g_cfg.video.min_scalable_dimension, {"1", "16", "32", "64", "128", "256", "512"}, "Smaller render targets are not scaled.", " px");
+			add("Video", "VSync", &g_cfg.video.vsync, {}, {});
+			add("Video", "Frame limit", &g_cfg.video.frame_limit, {}, "Auto follows the game's refresh rate.");
+			add("Video", "Anisotropic filter", &g_cfg.video.anisotropic_level_override, {"0", "2", "4", "8", "16"}, "Sharper textures at an angle. Auto lets the game choose.", {}, {"Auto", "2x", "4x", "8x", "16x"});
+			add("Video", "Output scaling", &g_cfg.video.output_scaling, {}, "How the picture is scaled to the screen. FSR sharpens it.");
+			add("Video", "FSR sharpening", &g_cfg.video.rcas_sharpening_intensity, range(0, 100, 10), "Only with FSR output scaling.", "%");
+			add("Video", "Stretch to the screen", &g_cfg.video.stretch_to_display_area, on_off, "Fills the screen instead of keeping the game's aspect ratio.");
+
+			add("Audio", "Volume", &g_cfg.audio.volume, {"0", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100", "125", "150", "175", "200"}, {}, "%");
+			add("Audio", "Audio buffering", &g_cfg.audio.enable_buffering, on_off, "Smooths out crackling when the game runs below full speed.");
+			add("Audio", "Audio buffer length", &g_cfg.audio.desired_buffer_duration, {"20", "34", "50", "75", "100", "150", "200", "250"}, "Longer is smoother, with more delay.", " ms");
+			add("Audio", "Time stretching", &g_cfg.audio.enable_time_stretching, on_off, "Slows the sound down with the game instead of breaking it up (needs buffering).");
+			add("Audio", "Time stretching threshold", &g_cfg.audio.time_stretching_threshold, range(0, 100, 5), "Buffer fill below which stretching starts.", "%");
+
+			add("Stats overlay", "Stats overlay", &g_cfg.video.perf_overlay.enabled, on_off, "FPS, CPU and GPU load while a game runs.");
+			add("Stats overlay", "Stats detail", &g_cfg.video.perf_overlay.level, {"Minimal", "Low", "Medium", "High"}, "Minimal = FPS. Low adds CPU. Medium adds PPU/SPU/RSX. High adds GPU load.");
+			add("Stats overlay", "Framerate graph", &g_cfg.video.perf_overlay.framerate_graph_enabled, on_off, {});
+			add("Stats overlay", "Frame time graph", &g_cfg.video.perf_overlay.frametime_graph_enabled, on_off, {});
+			add("Stats overlay", "Framerate graph detail", &g_cfg.video.perf_overlay.framerate_graph_detail_level, {}, {});
+			add("Stats overlay", "Frame time graph detail", &g_cfg.video.perf_overlay.frametime_graph_detail_level, {}, {});
+			add("Stats overlay", "Framerate graph points", &g_cfg.video.perf_overlay.framerate_datapoint_count, {"20", "50", "100", "200", "400"}, {});
+			add("Stats overlay", "Frame time graph points", &g_cfg.video.perf_overlay.frametime_datapoint_count, {"50", "100", "170", "300", "600"}, {});
+			add("Stats overlay", "Update interval", &g_cfg.video.perf_overlay.update_interval, {"100", "200", "350", "500", "1000"}, {}, " ms");
+			add("Stats overlay", "Position", &g_cfg.video.perf_overlay.position, {}, {});
+			add("Stats overlay", "Center horizontally", &g_cfg.video.perf_overlay.center_x, on_off, {});
+			add("Stats overlay", "Center vertically", &g_cfg.video.perf_overlay.center_y, on_off, {});
+			add("Stats overlay", "Horizontal margin", &g_cfg.video.perf_overlay.margin_x, range(0, 20, 1), {}, "%");
+			add("Stats overlay", "Vertical margin", &g_cfg.video.perf_overlay.margin_y, range(0, 20, 1), {}, "%");
+			add("Stats overlay", "Font size", &g_cfg.video.perf_overlay.font_size, range(6, 36, 2), {}, " px");
+			add("Stats overlay", "Opacity", &g_cfg.video.perf_overlay.opacity, range(0, 100, 10), {}, "%");
+
+			add("Notifications", "Trophy popups", &g_cfg.misc.show_trophy_popups, on_off, {});
+			add("Notifications", "RPCN popups", &g_cfg.misc.show_rpcn_popups, on_off, "Friend and connection messages.");
+			add("Notifications", "Shader compile hint", &g_cfg.misc.show_shader_compilation_hint, on_off, {});
+			add("Notifications", "PPU compile hint", &g_cfg.misc.show_ppu_compilation_hint, on_off, {});
+			add("Notifications", "Auto save / load hint", &g_cfg.misc.show_autosave_autoload_hint, on_off, {});
+			add("Notifications", "Pressure sensitivity hint", &g_cfg.misc.show_pressure_intensity_toggle_hint, on_off, {});
+			add("Notifications", "Analog limiter hint", &g_cfg.misc.show_analog_limiter_toggle_hint, on_off, {});
+			add("Notifications", "Fatal error hints", &g_cfg.misc.show_fatal_error_hints, on_off, {});
+			add("Notifications", "Music during boot", &g_cfg.misc.play_music_during_boot, on_off, "The game's music while it starts.");
+
+			add("Input", "Keep controllers connected", &g_cfg.io.keep_pads_connected, on_off, "Games keep seeing a controller that was turned off.");
+			add("Input", "Controller thread mode", &g_cfg.io.pad_mode, {}, {});
+			add("Input", "Controller poll sleep", &g_cfg.io.pad_sleep, {"0", "100", "250", "500", "1000", "2000", "5000"}, "Lower reacts faster and uses more CPU.", " µs");
+
+			const std::string risky = "Changes the game's timing: wrong values can slow, speed up, hang or crash games.";
+			add("Advanced (can break games)", "Preferred SPU threads", &g_cfg.core.preferred_spu_threads, range(0, 6, 1), "0 = automatic.");
+			add("Advanced (can break games)", "Max SPURS threads", &g_cfg.core.max_spurs_threads, range(1, 6, 1), risky);
+			add("Advanced (can break games)", "Max CPU preemptions", &g_cfg.core.max_cpu_preempt_count_per_frame, {"0", "10", "25", "50", "100", "200", "400"}, risky);
+			add("Advanced (can break games)", "Accurate RSX reservation access", &g_cfg.core.rsx_accurate_res_access, on_off, "Slower; fixes some games.");
+			add("Advanced (can break games)", "Sleep timers accuracy", &g_cfg.core.sleep_timers_accuracy, {}, risky);
+			add("Advanced (can break games)", "PPU event wake-up delay", &g_cfg.core.ppu_event_wakeup_delay, {"0", "10", "25", "50", "100", "200"}, risky, " µs");
+			add("Advanced (can break games)", "Driver wake-up delay", &g_cfg.video.driver_wakeup_delay, {"0", "1", "20", "40", "100", "200", "400", "800"}, risky, " µs");
+			add("Advanced (can break games)", "Vblank rate", &g_cfg.video.vblank_rate, {"30", "50", "60", "90", "120", "150", "180", "240"}, risky, " Hz");
+			add("Advanced (can break games)", "Vblank NTSC fixup", &g_cfg.video.vblank_ntsc, on_off, {});
+			add("Advanced (can break games)", "RSX memory tiling", &g_cfg.video.handle_tiled_memory, on_off, "Fixes some games' graphics; slower.");
+
+			add("Debug", "Debug overlay", &g_cfg.video.debug_overlay, on_off, {});
+			add("Debug", "Input debug overlay", &g_cfg.io.pad_debug_overlay, on_off, {});
+			add("Debug", "Texture LOD bias", &g_cfg.video.texture_lod_bias, {"-2", "-1.5", "-1", "-0.5", "0", "0.5", "1", "1.5", "2"}, "Negative is sharper, positive is blurrier.");
+			return out;
+		}
+
 		std::vector<setting_item>& xaml_settings()
 		{
-			static std::vector<setting_item> items = make_settings();
+			static std::vector<setting_item> items = []()
+			{
+				std::vector<setting_item> all = make_settings();
+				for (setting_item& item : make_pause_settings())
+					all.push_back(std::move(item));
+				return all;
+			}();
 			return items;
 		}
 
@@ -2686,13 +2789,28 @@ namespace uwp_frontend
 			}
 			v.values = setting_values(item);
 			v.toggle = v.values.size() == 2 && v.values[0] == "false" && v.values[1] == "true";
-			for (const std::string& value : v.values)
-				v.shown.push_back(v.toggle ? (value == "true" ? "On" : "Off") : value);
+			for (usz j = 0; j < v.values.size(); j++)
+				v.shown.push_back(v.toggle ? (v.values[j] == "true" ? "On" : "Off") : j < item.shown.size() ? item.shown[j] : v.values[j]);
 			const std::string cur = item.node->to_string();
-			const auto it = std::find(v.values.begin(), v.values.end(), cur);
+			auto it = std::find(v.values.begin(), v.values.end(), cur);
+			if (it == v.values.end())
+			{
+				// Numbers: "4" in the list is "4.000000" in a float setting, and a value set elsewhere picks the nearest entry.
+				char* end = nullptr;
+				const double cur_num = std::strtod(cur.c_str(), &end);
+				if (end != cur.c_str())
+				{
+					it = std::min_element(v.values.begin(), v.values.end(), [cur_num](const std::string& a, const std::string& b)
+					{
+						return std::abs(std::strtod(a.c_str(), nullptr) - cur_num) < std::abs(std::strtod(b.c_str(), nullptr) - cur_num);
+					});
+				}
+			}
 			v.current = it == v.values.end() ? 0 : static_cast<int>(it - v.values.begin());
-			// What the running game picks up without a restart.
-			v.in_game = item.label == "Stats overlay" || item.label == "Stats detail" || item.label == "Frame limit";
+			// The pause menu: what RPCS3's home menu changes while a game runs. The Settings tab shows the rest.
+			v.in_game = item.pause;
+			v.pause_only = item.pause;
+			v.section = item.section;
 			out.push_back(std::move(v));
 		}
 		return out;
