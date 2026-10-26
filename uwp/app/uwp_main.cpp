@@ -904,6 +904,10 @@ namespace
 			// Dozen reuses command buffers' internal D3D12 buffers; LocalState/no_dzn_bufpool turns that off (A/B).
 			if (fs::is_file(g_local_dir + "no_dzn_bufpool"))
 				_putenv_s("DZN_NO_BUFPOOL", "1");
+			// Replays each self-contained D3D12 call on a scratch list to name the one that breaks a command list
+			// (Close E_INVALIDARG, shown as VK_ERROR_OUT_OF_HOST_MEMORY). Slow; LocalState/dzn_probe for one repro.
+			if (fs::is_file(g_local_dir + "dzn_probe"))
+				_putenv_s("DZN_PROBE", "0");
 
 			// Errors and warnings from the Vulkan driver (Mesa Dozen), with Mesa's source file:line.
 			uwp_vkshim_log = [](const char* where, const char* text)

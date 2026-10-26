@@ -1,0 +1,20 @@
+diff --git a/src/microsoft/vulkan/dzn_cmd_buffer.c b/src/microsoft/vulkan/dzn_cmd_buffer.c
+index 6b7b525..34790e4 100644
+--- a/src/microsoft/vulkan/dzn_cmd_buffer.c
++++ b/src/microsoft/vulkan/dzn_cmd_buffer.c
+@@ -2694,6 +2694,15 @@ dzn_cmd_buffer_copy_img_chunk(struct dzn_cmd_buffer *cmdbuf,
+    ID3D12GraphicsCommandList1 *cmdlist = cmdbuf->cmdlist;
+ 
+    VkImageCopy2 region = info->pRegions[r];
++   /* Same as the buffer/image copies: an empty region copies nothing, and a zero-sized box or
++    * footprint on the Xbox's D3D12 makes Close() fail with E_INVALIDARG (VK_ERROR_OUT_OF_HOST_MEMORY). */
++   if (!region.extent.width || !region.extent.height || !region.extent.depth) {
++      static unsigned count;
++      if (count++ < 4)
++         mesa_logw("dzn: skipping empty image copy (extent %ux%ux%u)",
++                   region.extent.width, region.extent.height, region.extent.depth);
++      return;
++   }
+    dzn_image_align_extent(src, &region.extent);
+ 
+    const VkImageSubresourceLayers *src_subres = &region.srcSubresource;
