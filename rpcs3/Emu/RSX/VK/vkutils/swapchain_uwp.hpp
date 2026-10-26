@@ -3,6 +3,10 @@
 #include "swapchain_core.h"
 #include "util/logs.hpp"
 
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+
 LOG_CHANNEL(uwp_present_log, "UWPPRESENT");
 
 // UWP has no Vulkan window-system integration (Dozen only presents to HWNDs). Frames are
@@ -26,10 +30,22 @@ namespace vk
 		std::vector<VkFence> m_fences;
 		s32 m_pending = -1;
 
+		// The 8 MB copy of a finished frame into the shell's buffer runs on a thread of its own. On the
+		// RSX thread it cost 1.3 ms a frame, and 3-4 ms in busy PS Home scenes where RSX was already the
+		// limit. The image stays mapped and in use until the copy is done; the next hand_over frees it.
+		std::thread m_copier;
+		std::mutex m_copy_mutex;
+		std::condition_variable m_copy_cv;
+		const void* m_copy_src = nullptr; // set while the copier has a job (guarded by m_copy_mutex)
+		u32 m_copy_width = 0, m_copy_height = 0;
+		bool m_copier_exit = false;
+		s32 m_copy_image = -1; // RSX thread: image mapped for the copier, freed by finish_copy()
+		atomic_t<u64> m_copier_us = 0;
+
 		// Frame pacing stats, logged every c_stats_frames presents.
 		static constexpr u32 c_stats_frames = 300;
 		u64 m_last_present_us = 0;
-		u64 m_interval_sum_us = 0, m_interval_max_us = 0, m_wait_sum_us = 0, m_copy_sum_us = 0;
+		u64 m_interval_sum_us = 0, m_interval_max_us = 0, m_wait_sum_us = 0, m_copy_sum_us = 0, m_copier_sum_us = 0;
 		u32 m_stats_count = 0;
 
 		static u64 now_us()
@@ -40,15 +56,58 @@ namespace vk
 			return static_cast<u64>(t.QuadPart) * 1000000 / static_cast<u64>(f.QuadPart);
 		}
 
+		void copier_loop()
+		{
+			std::unique_lock lock(m_copy_mutex);
+			for (;;)
+			{
+				m_copy_cv.wait(lock, [&] { return m_copy_src || m_copier_exit; });
+				if (!m_copy_src)
+					return;
+				const void* src = m_copy_src;
+				const u32 width = m_copy_width, height = m_copy_height;
+				lock.unlock();
+				const u64 t0 = now_us();
+				uwp_present_frame(src, width, height);
+				m_copier_us += now_us() - t0;
+				lock.lock();
+				m_copy_src = nullptr;
+				m_copy_cv.notify_all();
+			}
+		}
+
+		// Waits for the copier's current job, then unmaps and frees its image (RSX thread).
+		void finish_copy()
+		{
+			if (m_copy_image < 0)
+				return;
+			{
+				std::unique_lock lock(m_copy_mutex);
+				m_copy_cv.wait(lock, [&] { return !m_copy_src; });
+			}
+			auto& img = swapchain_images[m_copy_image];
+			img.second->free_pixels();
+			img.first = false;
+			m_copy_image = -1;
+		}
+
 		void hand_over(u32 image)
 		{
 			const u64 t0 = now_us();
 			vkWaitForFences(dev, 1, &m_fences[image], VK_TRUE, 1'000'000'000ull);
 			const u64 t1 = now_us();
-			auto& src = swapchain_images[image];
-			uwp_present_frame(src.second->get_pixels(), m_width, m_height);
-			src.second->free_pixels();
-			src.first = false;
+			finish_copy();
+			const void* pixels = swapchain_images[image].second->get_pixels();
+			if (!m_copier.joinable())
+				m_copier = std::thread([this] { copier_loop(); });
+			{
+				std::lock_guard lock(m_copy_mutex);
+				m_copy_src = pixels;
+				m_copy_width = m_width;
+				m_copy_height = m_height;
+			}
+			m_copy_cv.notify_all();
+			m_copy_image = static_cast<s32>(image);
 			const u64 t2 = now_us();
 			m_wait_sum_us += t1 - t0;
 			m_copy_sum_us += t2 - t1;
@@ -58,6 +117,7 @@ namespace vk
 
 		void release_fences()
 		{
+			finish_copy();
 			if (m_pending >= 0)
 			{
 				vkWaitForFences(dev, 1, &m_fences[m_pending], VK_TRUE, 1'000'000'000ull);
@@ -71,6 +131,20 @@ namespace vk
 
 	public:
 		using native_swapchain_base::native_swapchain_base;
+
+		~swapchain_UWP() override
+		{
+			finish_copy();
+			if (m_copier.joinable())
+			{
+				{
+					std::lock_guard lock(m_copy_mutex);
+					m_copier_exit = true;
+				}
+				m_copy_cv.notify_all();
+				m_copier.join();
+			}
+		}
 
 		bool init() override
 		{
@@ -127,11 +201,13 @@ namespace vk
 				m_interval_max_us = std::max(m_interval_max_us, interval);
 				if (++m_stats_count == c_stats_frames)
 				{
-					uwp_present_log.notice(" %.1f fps avg, frame interval avg %.1f ms max %.1f ms, GPU wait %.2f ms, copy %.2f ms",
+					const u64 copier_us = m_copier_us.load();
+					uwp_present_log.notice(" %.1f fps avg, frame interval avg %.1f ms max %.1f ms, GPU wait %.2f ms, copy %.2f ms (copy thread %.2f ms)",
 						1e6 * m_stats_count / m_interval_sum_us, m_interval_sum_us / 1000.0 / m_stats_count, m_interval_max_us / 1000.0,
-						m_wait_sum_us / 1000.0 / m_stats_count, m_copy_sum_us / 1000.0 / m_stats_count);
+						m_wait_sum_us / 1000.0 / m_stats_count, m_copy_sum_us / 1000.0 / m_stats_count, (copier_us - m_copier_sum_us) / 1000.0 / m_stats_count);
 					m_stats_count = 0;
 					m_interval_sum_us = m_interval_max_us = m_wait_sum_us = m_copy_sum_us = 0;
+					m_copier_sum_us = copier_us;
 				}
 			}
 			m_last_present_us = now;
