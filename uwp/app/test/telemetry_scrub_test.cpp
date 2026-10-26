@@ -19,6 +19,7 @@ int main()
 		{"SYS: Path: C:\\Users\\Emelin\\AppData\\Local\\Packages\\x", "SYS: Path: C:\\Users\\<user>\\AppData\\Local\\Packages\\x"},
 		{"SYS: /home/a and C:/users/bob/x", "SYS: /home/a and C:/users/<user>/x"},
 		{"·N 0:00:01.0 {TID: 1} UWPRPCN: account created for me.name+x@mail.example.de now", "·N 0:00:01.0 {TID: 1} UWPRPCN: account created for <email> now"},
+		{"RSX: UWP hitches: 2 in 10 s 68ms@285.82s(mem 1402, ovl 71 ms ago) 101ms@293.02s(mem 401, ovl 4 ms ago)", "RSX: UWP hitches: 2 in 10 s 68ms@285.82s(mem 1402, ovl 71 ms ago) 101ms@293.02s(mem 401, ovl 4 ms ago)"},
 		{"NET: bound 192.168.1.23:3658 and 10.0.0.1, local 127.0.0.1, any 0.0.0.0", "NET: bound <ip>:3658 and <ip>, local 127.0.0.1, any 0.0.0.0"},
 		{"SYS: RPCS3Xbox 0.1.34.72, firmware 4.93, v1.2.3.4", "SYS: RPCS3Xbox 0.1.34.72, firmware 4.93, v1.2.3.4"},
 		{"NET: ip 2a02:8108:1c0:2e00:1234:5678:9abc:def0 mac 00:1a:2b:3c:4d:5e", "NET: ip <addr> mac <addr>"},
