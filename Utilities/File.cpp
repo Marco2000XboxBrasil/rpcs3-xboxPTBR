@@ -735,7 +735,19 @@ namespace fs
 				// The kernel can't fault in lazily committed guest pages (sys_vm memory).
 				utils::memory_commit_lazy(data, size);
 #endif
+#ifdef RPCS3_UWP
+				// Name the file: a full drive otherwise ends the app as "Verification failed" with no path.
+				if (!WriteFile(m_handle, data, size, &nwritten, &ovl))
+				{
+					const DWORD error = GetLastError();
+					wchar_t name[1024]{};
+					const DWORD len = GetFinalPathNameByHandleW(m_handle, name, 1023, FILE_NAME_NORMALIZED);
+					fmt::throw_exception("file::write of %u bytes at 0x%llx failed for '%s' (error=%s)", size, pos,
+						len && len < 1023 ? wchar_to_utf8(name) : std::string("?"), fmt::win_error{error, nullptr});
+				}
+#else
 				ensure(WriteFile(m_handle, data, size, &nwritten, &ovl)); // "file::write"
+#endif
 				ensure(nwritten == size);
 				nwritten_sum += nwritten;
 
