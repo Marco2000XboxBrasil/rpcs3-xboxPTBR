@@ -516,6 +516,9 @@ namespace uwp_frontend
 			bool pause = false;
 			std::string section;
 			std::vector<std::string> shown; // what the list shows for each of `values` (empty: the values)
+			// In a game: saved to config.yml but not applied until the game boots again (the live switch breaks Dozen).
+			bool on_restart = false;
+			std::string pending; // the saved value the running game doesn't use yet
 		};
 
 		struct modal
@@ -927,6 +930,41 @@ namespace uwp_frontend
 			{
 				Emulator::SaveSettings(g_cfg.to_string(), {});
 			});
+		}
+
+		// Writes config.yml with `node` set to `value` while the running game keeps the current value:
+		// the change is made on a copy of g_cfg, and the file is written without reloading it (SaveSettings would).
+		bool save_setting_for_next_boot(const cfg::_base* node, const std::string& value)
+		{
+			std::vector<std::string> names;
+			for (const cfg::_base* n = node; n && n->get_parent(); n = n->get_parent())
+				names.push_back(n->get_name());
+
+			auto copy = std::make_shared<cfg_root>();
+			copy->from_string(g_cfg.to_string());
+			cfg::_base* target = copy.get();
+			for (auto it = names.rbegin(); it != names.rend() && target; ++it)
+			{
+				cfg::_base* next = nullptr;
+				for (cfg::_base* child : static_cast<cfg::node*>(target)->get_nodes())
+				{
+					if (child->get_name() == *it)
+						next = child;
+				}
+				target = next;
+			}
+			if (!target || target == copy.get() || !target->from_string(value))
+				return false;
+
+			g_host.run_on_main([copy]()
+			{
+				const std::string path = fs::get_config_dir(true) + "config.yml";
+				const std::string text = copy->to_string();
+				fs::pending_file temp(path);
+				if (!temp.file || (temp.file.write(text.data(), text.size()), !temp.commit()))
+					ui_log.error("UI: could not save %s (%s)", path, fs::g_tls_error);
+			});
+			return true;
 		}
 
 		// ---- Firmware install ----
@@ -2828,8 +2866,12 @@ namespace uwp_frontend
 			};
 			const std::vector<std::string> on_off = {"false", "true"};
 
-			add("Video", "Resolution scale", &g_cfg.video.resolution_scale_percent, {"50", "75", "100", "125", "150", "200", "250", "300"}, "Internal rendering resolution in percent of 720p.", "%");
-			add("Video", "Resolution scale threshold", &g_cfg.video.min_scalable_dimension, {"1", "16", "32", "64", "128", "256", "512"}, "Smaller render targets are not scaled.", " px");
+			// Changing these in a running game rebuilds every render target (sync_scaling_config), and on the Xbox the next
+			// frame's D3D12 command list then fails to close (E_INVALIDARG, "Out of host memory"). They apply at the next boot.
+			add("Video", "Resolution scale", &g_cfg.video.resolution_scale_percent, {"50", "75", "100", "125", "150", "200", "250", "300"}, "Internal rendering resolution in percent of 720p. Applies when the game restarts (Restart game).", "%");
+			out.back().on_restart = true;
+			add("Video", "Resolution scale threshold", &g_cfg.video.min_scalable_dimension, {"1", "16", "32", "64", "128", "256", "512"}, "Smaller render targets are not scaled. Applies when the game restarts (Restart game).", " px");
+			out.back().on_restart = true;
 			add("Video", "VSync", &g_cfg.video.vsync, {}, {});
 			add("Video", "Frame limit", &g_cfg.video.frame_limit, {}, "Auto follows the game's refresh rate.");
 			add("Video", "Anisotropic filter", &g_cfg.video.anisotropic_level_override, {"0", "2", "4", "8", "16"}, "Sharper textures at an angle. Auto lets the game choose.", {}, {"Auto", "2x", "4x", "8x", "16x"});
@@ -3032,7 +3074,7 @@ namespace uwp_frontend
 	std::vector<setting_view> get_settings()
 	{
 		std::vector<setting_view> out;
-		for (const setting_item& item : xaml_settings())
+		for (setting_item& item : xaml_settings())
 		{
 			setting_view v;
 			v.label = item.label;
@@ -3048,7 +3090,9 @@ namespace uwp_frontend
 			v.toggle = v.values.size() == 2 && v.values[0] == "false" && v.values[1] == "true";
 			for (usz j = 0; j < v.values.size(); j++)
 				v.shown.push_back(v.toggle ? (v.values[j] == "true" ? "On" : "Off") : j < item.shown.size() ? item.shown[j] : v.values[j]);
-			const std::string cur = item.node->to_string();
+			if (!g_in_game || item.pending == item.node->to_string())
+				item.pending.clear();
+			const std::string cur = item.pending.empty() ? item.node->to_string() : item.pending;
 			auto it = std::find(v.values.begin(), v.values.end(), cur);
 			if (it == v.values.end())
 			{
@@ -3080,7 +3124,19 @@ namespace uwp_frontend
 			return;
 		setting_item& item = items[index];
 		const std::vector<std::string> values = setting_values(item);
-		if (!item.node || value_index >= values.size() || item.node->to_string() == values[value_index])
+		if (!item.node || value_index >= values.size())
+			return;
+		if (item.on_restart && g_in_game)
+		{
+			const std::string& shown = item.pending.empty() ? item.node->to_string() : item.pending;
+			if (shown != values[value_index] && save_setting_for_next_boot(item.node, values[value_index]))
+			{
+				ui_log.notice("UI: setting '%s' = %s (applies at the next boot)", item.label, values[value_index]);
+				item.pending = item.node->to_string() == values[value_index] ? std::string() : values[value_index];
+			}
+			return;
+		}
+		if (item.node->to_string() == values[value_index])
 			return;
 		if (item.node->from_string(values[value_index]))
 		{
