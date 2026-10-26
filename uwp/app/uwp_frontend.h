@@ -196,4 +196,6 @@ namespace uwp_frontend
 	void suspend_game();
 	void resume_game();
 	void stop_game();
+	// Pause menu: stops the game and boots it again.
+	void restart_game();
 }

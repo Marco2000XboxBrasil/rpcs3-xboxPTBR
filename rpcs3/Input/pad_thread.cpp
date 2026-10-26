@@ -47,6 +47,9 @@ namespace pad
 	atomic_t<bool> g_reset{false};
 	atomic_t<bool> g_enabled{true};
 	atomic_t<bool> g_home_menu_requested{false};
+#ifdef RPCS3_UWP
+	void (*g_uwp_open_pause_menu)() = nullptr;
+#endif
 }
 
 namespace rsx
@@ -913,6 +916,17 @@ extern bool close_osk_from_ps_button();
 
 void pad_thread::open_home_menu()
 {
+#ifdef RPCS3_UWP
+	// The XAML shell has its own pause menu (resume, restart, stop, settings); showing RPCS3's home menu
+	// overlay as well put two menus on screen. The software-drawn shell (LocalState/legacy_ui) has none.
+	if (pad::g_uwp_open_pause_menu)
+	{
+		input_log.notice("PS button: opening the app's pause menu");
+		pad::g_uwp_open_pause_menu();
+		return;
+	}
+#endif
+
 	// Check if the OSK is open and can be closed
 	if (!close_osk_from_ps_button())
 	{

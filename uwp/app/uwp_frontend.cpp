@@ -2938,4 +2938,16 @@ namespace uwp_frontend
 			Emu.GracefulShutdown(false, true);
 		});
 	}
+
+	void restart_game()
+	{
+		g_host.run_on_main([]()
+		{
+			g_paused_by_menu = false;
+			ui_log.notice("UI: restarting the game from the pause menu");
+			// As RPCS3's home menu does it: keep the game screen up across the stop and the new boot.
+			Emu.SetContinuousMode(true);
+			Emu.Restart(true);
+		});
+	}
 }

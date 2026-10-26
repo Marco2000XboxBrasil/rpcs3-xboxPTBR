@@ -188,8 +188,7 @@ Publishing a GitHub release tagged `v0.1.34.xx` is all an update notice needs.
 | --- | --- |
 | A / B / X / Y | Cross / Circle / Square / Triangle |
 | Menu / View | Start / Select |
-| Tap View + Menu | PS button |
-| Hold View + Menu ~1 s | Pause menu: resume, stop the game (back to the app menu), live settings |
+| View + Menu (PS button) | Pause menu: resume, restart, stop the game (back to the app menu), live settings. In a game it replaces RPCS3's own home menu; on the XMB a tap is the PS button and holding ~1 s opens the pause menu |
 
 Menu: D-pad or left stick to move, A select, B back, LB/RB tabs, Y rescan. The Xbox button stays
 with the system. In the pause menu the game is paused; B resumes it.
