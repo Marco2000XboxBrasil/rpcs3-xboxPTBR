@@ -203,7 +203,10 @@ Empty files in the app's `LocalState` folder (via Device Portal file explorer):
 - `storage`: `local` or a folder path for the cache location.
 - `system_styles`: keep the standard (Windows 10) control styles instead of WinUI 2's.
 - `legacy_ui`: use the earlier software-drawn menu instead of the XAML one (no pause menu; hold View + Menu stops the game).
-- `precompile`, `background_compile`: turn LLVM precompilation / background PRX compile back on.
+- `precompile`: turn LLVM precompilation back on.
+- `no_background_compile`: don't compile the firmware's PRX modules in the background once the XMB
+  has run for 30 s (on by default; `background_compile_done` remembers a finished run per app
+  version, firmware and cache folder; delete it to run again).
 - `no_network`, `null_audio`, `null_renderer`, `heap_guard`, `ext_host_mem`: debugging switches.
 - `compile_headroom`, `compile_job_mb`: a new PPU/SPU compile job starts only while
   headroom + job_mb per running job is left of the app's memory (defaults 1280 and 128 MB).

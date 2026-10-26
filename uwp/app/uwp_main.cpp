@@ -1396,10 +1396,14 @@ namespace
 		b->running = true;
 	}
 
-	// With LLVM precompilation off, XMB modules compile the first time they load, which stalls
-	// navigation. Once the XMB has drawn frames for 30 s, compile the rest of dev_flash in the
-	// background at low priority (cached modules are skipped), so later visits hit the cache.
-	// One worker on one JIT core at lowest priority. Opt-in via LocalState/background_compile.
+	// With LLVM precompilation off, XMB modules compile the first time they load: the XMB freezes for
+	// 2-12 s per plugin (telemetry, 0.1.35.0: up to 5 min of frozen XMB in a first session after an
+	// update). Once the XMB has drawn frames for 30 s, compile the rest of dev_flash in the background
+	// at low priority (cached modules are skipped), so later visits hit the cache. One worker on one
+	// JIT core. The XMB's plugins go first, then the libraries it loads. A finished run is remembered
+	// in LocalState/background_compile_done (app version, firmware, cache folder), so it runs once per
+	// update. LocalState/no_background_compile turns it off (0.1.31.4's version with every core
+	// starved the XMB; this one has been one worker since 0.1.32.1).
 	void start_background_precompile(u32 ticks)
 	{
 		static u32 since = 0;
@@ -1433,20 +1437,34 @@ namespace
 			return;
 
 		started = true;
-		// Off unless LocalState/background_compile exists: on 0.1.31.4 it kept the XMB from drawing.
-		if (!fs::is_file(g_local_dir + "background_compile"))
+		if (fs::is_file(g_local_dir + "no_background_compile"))
+			return;
+
+		const std::string done_path = g_local_dir + "background_compile_done";
+		std::string stamp = fmt::format("%s|%s|%s", RPCS3_XBOX_VERSION, utils::get_firmware_version(), fs::get_cache_dir());
+		if (fs::file f{done_path}; f && f.to_string() == stamp)
 			return;
 
 		sys_log.always()("UWP: compiling the remaining dev_flash PPU modules in the background");
-		g_fxo->init<named_thread>("PPU Background Compiler"sv, []()
+		g_fxo->init<named_thread>("PPU Background Compiler"sv, [done_path, stamp = std::move(stamp)]()
 		{
 			thread_ctrl::scoped_priority low_prio(-1);
 			// Libraries only: precompiling executables swaps out the running XMB's main module.
 			g_ppu_precompile_prx_only = true;
-			std::vector<std::string> dirs{vfs::get("/dev_flash/")};
 			const u64 start = get_system_time();
-			ppu_precompile(dirs, nullptr, false);
-			sys_log.always()("UWP: background PPU compile %s after %us", Emu.IsStopped() ? "stopped" : "finished", (get_system_time() - start) / 1'000'000);
+			for (const char* dir : {"/dev_flash/vsh/module/", "/dev_flash/sys/internal/", "/dev_flash/sys/external/"})
+			{
+				if (Emu.IsStopped())
+					break;
+				std::vector<std::string> dirs{vfs::get(dir)};
+				const u64 dir_start = get_system_time();
+				ppu_precompile(dirs, nullptr, false);
+				sys_log.notice("UWP: background PPU compile of %s took %us", dir, (get_system_time() - dir_start) / 1'000'000);
+			}
+			const bool stopped = Emu.IsStopped();
+			if (!stopped)
+				fs::write_file(done_path, fs::rewrite, stamp);
+			sys_log.always()("UWP: background PPU compile %s after %us", stopped ? "stopped" : "finished", (get_system_time() - start) / 1'000'000);
 		});
 	}
 
