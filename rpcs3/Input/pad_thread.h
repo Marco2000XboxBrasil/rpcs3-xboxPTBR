@@ -83,6 +83,10 @@ namespace pad
 	extern atomic_t<bool> g_reset;
 	extern atomic_t<bool> g_started;
 	extern atomic_t<bool> g_home_menu_requested;
+#ifdef RPCS3_UWP
+	// Set by the XAML shell: the PS button opens its pause menu instead of RPCS3's home menu overlay.
+	extern void (*g_uwp_open_pause_menu)();
+#endif
 
 	static inline class pad_thread* get_pad_thread(bool relaxed = false)
 	{

@@ -90,6 +90,7 @@ extern u64 g_uwp_usleep_spin_us; // lv2.cpp
 extern bool g_uwp_um_wait; // lv2.cpp
 extern u32 g_uwp_spu_llvm_workers; // SPUCommonRecompiler.cpp
 extern std::string g_uwp_config_override_path; // System.cpp
+namespace pad { extern void (*g_uwp_open_pause_menu)(); } // pad_thread.cpp
 
 namespace
 {
@@ -2141,6 +2142,8 @@ namespace
 		h.create_swap_chain = []() { return create_xaml_swap_chain(); };
 		h.launched = []()
 		{
+			// The PS button (View + Menu) opens the XAML pause menu, not RPCS3's home menu overlay.
+			pad::g_uwp_open_pause_menu = uwp_xaml::request_pause_menu;
 			// RPCS3 threads need large stacks; give the emulator its own thread.
 			CloseHandle(CreateThread(nullptr, 16 * 1024 * 1024, emulator_thread, nullptr, 0, nullptr));
 			CloseHandle(CreateThread(nullptr, 1024 * 1024, xaml_render_thread, nullptr, 0, nullptr));

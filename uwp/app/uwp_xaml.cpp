@@ -637,6 +637,16 @@ namespace uwp_xaml
 					cancel->add_Click(make_handler<routed_handler>([this](IInspectable*, IRoutedEventArgs*) { cancel_text(); }).get(), &token);
 				if (const auto resume = find_el<IButtonBase>(root, L"PauseResume"))
 					resume->add_Click(make_handler<routed_handler>([this](IInspectable*, IRoutedEventArgs*) { close_pause(); }).get(), &token);
+				if (const auto restart = find_el<IButtonBase>(root, L"PauseRestart"))
+				{
+					restart->add_Click(make_handler<routed_handler>([this](IInspectable*, IRoutedEventArgs*)
+					{
+						show_dialog({"Restart the game?", "The game starts again from the beginning. Progress that wasn't saved in the game is lost.", "Restart", [this]()
+						{
+							after_restart_chosen();
+						}});
+					}).get(), &token);
+				}
 				if (const auto stop = find_el<IButtonBase>(root, L"PauseStop"))
 				{
 					stop->add_Click(make_handler<routed_handler>([this](IInspectable*, IRoutedEventArgs*)
@@ -1350,6 +1360,16 @@ namespace uwp_xaml
 				update_gating();
 				pending_focus.reset();
 				uwp_frontend::stop_game();
+			}
+
+			// The user confirmed "Restart game": drop the pause menu, stop and boot the game again.
+			void after_restart_chosen()
+			{
+				pause_open = false;
+				set_visible(pause_layer, false);
+				update_gating();
+				pending_focus.reset();
+				uwp_frontend::restart_game();
 			}
 
 			void on_back()
