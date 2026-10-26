@@ -200,4 +200,13 @@ namespace uwp_frontend
 	void stop_game();
 	// Pause menu: stops the game and boots it again.
 	void restart_game();
+
+	// The rest of RPCS3's home menu, for the pause menu (UI thread). The lists open as screens (get_screen()).
+	bool has_trophies(); // the running game has a trophy set
+	void open_trophies();
+	void open_friends(); // RPCN friends and requests (needs an account)
+	void save_state();   // saves and goes on playing (or quits, with the Suspend setting)
+	bool has_save_states();
+	void open_load_state();
+	void take_screenshot(); // the next frame, once the pause menu has closed
 }
