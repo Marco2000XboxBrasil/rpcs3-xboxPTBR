@@ -1,0 +1,13 @@
+<Button xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,6" Padding="14,12,14,12">
+  <Grid>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="Auto"/>
+      <ColumnDefinition Width="*"/>
+      <ColumnDefinition Width="Auto"/>
+    </Grid.ColumnDefinitions>
+    <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="$GLYPH$" FontSize="20" Margin="0,0,16,0" VerticalAlignment="Center"/>
+    <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="16">$LABEL$</TextBlock>
+    <FontIcon Grid.Column="2" FontFamily="Segoe MDL2 Assets" Glyph="&#xE76C;" FontSize="12" Opacity="0.6" VerticalAlignment="Center"/>
+  </Grid>
+</Button>
