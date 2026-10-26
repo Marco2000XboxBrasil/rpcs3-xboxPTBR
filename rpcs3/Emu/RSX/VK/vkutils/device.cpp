@@ -1242,6 +1242,9 @@ namespace vk
 			result.d24_unorm_s8 = false;
 		}
 
+		// A4R4G4B4 textures: without R4G4B4A4, Dozen's B4G4R4A4 (D3D12 B4G4R4A4) holds the same bits with R and B swapped
+		result.rgba4_unorm = test_format_features(VK_FORMAT_R4G4B4A4_UNORM_PACK16, VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT, VK_FALSE);
+
 		// Checks if linear BGRA8 images can be used for present
 		result.bgra8_linear = test_format_features(VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_FEATURE_BLIT_SRC_BIT, VK_TRUE);
 
