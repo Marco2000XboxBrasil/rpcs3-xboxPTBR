@@ -2323,6 +2323,20 @@ namespace uwp_frontend
 			return false;
 		}
 
+		// In App mode the Xbox gives the app 1 GB instead of 5 GB, and every game dies at boot (out of video
+		// memory). A reinstall sets it back to App mode: LittleBigPlanet on 0.1.35.0 died 4 times in a row
+		// at 1.25 GB "of 1.000 GB" before the player switched it.
+		if (u64 limit = 0; rpcs3::utils::g_uwp_app_memory && (rpcs3::utils::g_uwp_app_memory(&limit), limit) && limit < (3ull << 30))
+		{
+			ui_log.error("UWP: not booting '%s': the app may use only %.2f GB (App mode)", path, limit / 1073741824.0);
+			set_status("Set the app type to Game to play", col_err);
+			post_modal("App type is set to App",
+				fmt::format("The Xbox gives this app only %.1f GB of memory, so games can't run. On the Xbox Home screen, "
+					"highlight RPCS3, press the Menu button, choose \"Manage game and add-ons\" or \"View details\", "
+					"and set App type to Game. Then start the app again.", limit / 1073741824.0));
+			return false;
+		}
+
 		// Without firmware every firmware library must use RPCS3's built-in (HLE) version,
 		// otherwise the boot stops with "firmware missing". With firmware, use the defaults.
 		if (!firmware_installed())
