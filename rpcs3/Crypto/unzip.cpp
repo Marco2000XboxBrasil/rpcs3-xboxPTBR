@@ -37,7 +37,11 @@ std::vector<u8> unzip(const void* src, usz size)
 		switch (inflate(&zs, Z_FINISH))
 		{
 		case Z_OK:
+			break;
 		case Z_STREAM_END:
+			// Done; bytes after the stream (a damaged file) would otherwise grow the buffer forever,
+			// since inflate() keeps returning Z_STREAM_END without consuming them.
+			zs.avail_in = 0;
 			break;
 		case Z_BUF_ERROR:
 			if (zs.avail_in)
