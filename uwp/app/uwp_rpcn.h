@@ -6,6 +6,7 @@
 // run them on a worker thread while no game is running.
 
 #include <string>
+#include <vector>
 #include <string_view>
 
 namespace uwp_rpcn
@@ -46,4 +47,20 @@ namespace uwp_rpcn
 	result resend_token();
 	result send_reset_token(std::string_view npid, std::string_view email);
 	result reset_password(std::string_view npid, std::string_view token, std::string_view new_password);
+
+	// The friends list (pause menu), as RPCS3's friends overlay shows it.
+	struct friend_entry
+	{
+		std::string name;
+		bool online = false;
+		std::string playing; // presence title while online
+	};
+	struct friends
+	{
+		std::vector<friend_entry> list; // online first
+		std::vector<std::string> requests_received, requests_sent, blocked;
+	};
+	result get_friends(friends& out); // logs in with the saved account
+	result add_friend(std::string_view npid); // a request, or accepts the other user's request
+	result remove_friend(std::string_view npid); // also rejects or cancels a request
 }

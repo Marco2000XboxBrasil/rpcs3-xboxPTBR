@@ -53,6 +53,12 @@
 #include "util/logs.hpp"
 #include "util/sysinfo.hpp"
 #include "util/video_source.h"
+#include "Utilities/date_time.h"
+#include "Emu/RSX/Overlays/overlay_message.h"
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_STATIC
+#include <stb_image_write.h>
 
 #include <chrono>
 #include <cstdio>
@@ -60,6 +66,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <thread>
 #include <vector>
 #include <unordered_map>
 #include <d3d11_1.h>
@@ -85,9 +92,12 @@ extern bool g_uwp_pso_library; // VKPipelineCompiler.cpp
 extern "C" void* uwp_lazy_lookup(const wchar_t* dll, const char* name); // uwp_lazyresolve.c
 namespace rsx { extern u32 g_uwp_rsx_idle_sleep_us; extern bool g_uwp_fifo_partial_line, g_uwp_fifo_retry_cap; } // RSXFIFO.cpp
 namespace rsx { extern atomic_t<u64> g_uwp_mem_poll_at_us, g_uwp_mem_poll_max_us; } // RSXThread.cpp
+namespace vk { extern bool g_uwp_async_present_copy; } // VKCommandStream.cpp
 extern u64 g_uwp_usleep_spin_us; // lv2.cpp
 extern bool g_uwp_um_wait; // lv2.cpp
+extern u32 g_uwp_spu_llvm_workers; // SPUCommonRecompiler.cpp
 extern std::string g_uwp_config_override_path; // System.cpp
+namespace pad { extern void (*g_uwp_open_pause_menu)(); } // pad_thread.cpp
 
 namespace
 {
@@ -121,6 +131,8 @@ namespace
 	u32 g_frame_width = 0, g_frame_height = 0;
 	u64 g_frame_serial = 0;
 
+	void save_screenshot(std::vector<u8> data, u32 width, u32 height, bool is_bgra);
+
 	// Stand-in for the desktop game window: fixed size, no native handle. The Vulkan
 	// renderer presents through swapchain_UWP, which calls uwp_present_frame().
 	class uwp_gs_frame final : public GSFrameBase
@@ -146,7 +158,10 @@ namespace
 
 		bool can_consume_frame() const override { return false; }
 		void present_frame(std::vector<u8>&&, u32, u32, u32, bool) const override {}
-		void take_screenshot(std::vector<u8>&&, u32, u32, bool) override {}
+		void take_screenshot(std::vector<u8>&& data, u32 width, u32 height, bool is_bgra) override
+		{
+			std::thread([data = std::move(data), width, height, is_bgra]() mutable { save_screenshot(std::move(data), width, height, is_bgra); }).detach();
+		}
 
 		void update_title(double) override {}
 	};
@@ -181,6 +196,35 @@ namespace
 	}
 	std::string g_local_dir; // LocalState, with trailing slash
 	std::string g_storage_root; // folder on the big drive chosen by choose_cache_dir ("E:/RPCS3/"), empty = LocalState
+
+	// The pause menu's Screenshot: a PNG next to the caches on the big drive (E:/RPCS3/screenshots/<title id>/),
+	// where a PC can read it, or in LocalState without one. Called on a thread of its own.
+	void save_screenshot(std::vector<u8> data, u32 width, u32 height, bool is_bgra)
+	{
+		if (data.size() < usz{width} * height * 4)
+			return;
+		u32* px = reinterpret_cast<u32*>(data.data());
+		for (usz i = 0, n = usz{width} * height; i < n; i++)
+			px[i] = (is_bgra ? ((px[i] & 0xFF) << 16) | (px[i] & 0xFF00) | ((px[i] >> 16) & 0xFF) : px[i]) | 0xFF000000;
+
+		const std::string id = Emu.GetTitleID();
+		const std::string dir = (g_storage_root.empty() ? g_local_dir : g_storage_root) + "screenshots/" + (id.empty() ? std::string() : id + "/");
+		const std::string path = dir + (id.empty() ? "" : id + "_") + date_time::current_time_narrow<'_'>() + ".png";
+		std::vector<u8> png;
+		const bool encoded = fs::create_path(dir) && stbi_write_png_to_func([](void* ctx, void* bytes, int size)
+		{
+			auto& out = *static_cast<std::vector<u8>*>(ctx);
+			out.insert(out.end(), static_cast<u8*>(bytes), static_cast<u8*>(bytes) + size);
+		}, &png, static_cast<int>(width), static_cast<int>(height), 4, data.data(), static_cast<int>(width * 4));
+		if (!encoded || !fs::write_file(path, fs::rewrite, png))
+		{
+			sys_log.error("UWP: could not save the screenshot to %s (%s)", path, fs::g_tls_error);
+			rsx::overlays::queue_message(std::string("Couldn't save the screenshot"));
+			return;
+		}
+		sys_log.success("UWP: screenshot saved to %s (%ux%u, %u KB)", path, width, height, png.size() >> 10);
+		rsx::overlays::queue_message(std::string("Screenshot saved to " + path));
+	}
 
 	// The app's own storage on the Xbox (LocalState, drive Q:) has only a few MB free, far too
 	// little for the PPU/SPU/shader caches (hundreds of MB for the XMB alone). Put the cache on
@@ -231,6 +275,7 @@ namespace
 		fs::remove_file(dir + "write_test");
 		g_android_cache_dir = dir;
 		g_storage_root = choice;
+		rpcs3::utils::g_uwp_savestates_dir = choice + "savestates/";
 
 		// The old cache in LocalState only takes the space the rest of the app needs.
 		if (fs::is_dir(local_cache))
@@ -904,6 +949,10 @@ namespace
 			// Dozen reuses command buffers' internal D3D12 buffers; LocalState/no_dzn_bufpool turns that off (A/B).
 			if (fs::is_file(g_local_dir + "no_dzn_bufpool"))
 				_putenv_s("DZN_NO_BUFPOOL", "1");
+			// Replays each self-contained D3D12 call on a scratch list to name the one that breaks a command list
+			// (Close E_INVALIDARG, shown as VK_ERROR_OUT_OF_HOST_MEMORY). Slow; LocalState/dzn_probe for one repro.
+			if (fs::is_file(g_local_dir + "dzn_probe"))
+				_putenv_s("DZN_PROBE", "0");
 
 			// Errors and warnings from the Vulkan driver (Mesa Dozen), with Mesa's source file:line.
 			uwp_vkshim_log = [](const char* where, const char* text)
@@ -981,6 +1030,13 @@ namespace
 					rpcs3::utils::uwp_compile_gate::job_mb = v;
 			}
 			sys_log.always()("UWP: compile memory headroom: %u MB + %u MB per running job", rpcs3::utils::uwp_compile_gate::headroom_mb, rpcs3::utils::uwp_compile_gate::job_mb);
+			// SPU LLVM background compile workers (RPCS3 picks 2 for 8 threads). LocalState/spu_workers
+			// holds another count (1-8); 0 gives RPCS3's.
+			if (fs::file f{g_local_dir + "spu_workers"})
+			{
+				g_uwp_spu_llvm_workers = std::min<u32>(static_cast<u32>(std::strtoul(f.to_string().c_str(), nullptr, 10)), 8);
+			}
+			sys_log.always()("UWP: SPU LLVM background compile workers: %s", g_uwp_spu_llvm_workers ? std::to_string(g_uwp_spu_llvm_workers) : std::string("RPCS3 default"));
 			// Desktop RPCS3 raises the system timer resolution (rpcs3.cpp); without it every short
 			// sleep and timeout of the emulated threads lasts a whole timer tick. Measured below
 			// before and after. An empty LocalState/default_timer file leaves it alone.
@@ -1041,6 +1097,10 @@ namespace
 			// (VKProgramPipeline.cpp). An empty LocalState/sync_shader_compile file keeps it on RSX.
 			g_uwp_deferred_shader_compile = !fs::is_file(g_local_dir + "sync_shader_compile");
 			sys_log.always()("UWP: shader SPIR-V compile on %s", g_uwp_deferred_shader_compile ? "the pipeline compiler threads" : "the RSX thread");
+			// Each frame's 8 MB copy to the shell runs on a thread of its own, not the RSX thread
+			// (swapchain_uwp.hpp). An empty LocalState/sync_present_copy file keeps it on RSX.
+			vk::g_uwp_async_present_copy = !fs::is_file(g_local_dir + "sync_present_copy");
+			sys_log.always()("UWP: frame copy to the shell on %s", vk::g_uwp_async_present_copy ? "its own thread" : "the RSX thread");
 			// LLVM precompilation compiles every module in dev_flash (~580) before the XMB starts:
 			// 36+ minutes on the first boot on the Xbox. Without it only the modules that load get
 			// compiled (the rest when first used). An empty LocalState/precompile file turns it on.
@@ -1384,10 +1444,14 @@ namespace
 		b->running = true;
 	}
 
-	// With LLVM precompilation off, XMB modules compile the first time they load, which stalls
-	// navigation. Once the XMB has drawn frames for 30 s, compile the rest of dev_flash in the
-	// background at low priority (cached modules are skipped), so later visits hit the cache.
-	// One worker on one JIT core at lowest priority. Opt-in via LocalState/background_compile.
+	// With LLVM precompilation off, XMB modules compile the first time they load: the XMB freezes for
+	// 2-12 s per plugin (telemetry, 0.1.35.0: up to 5 min of frozen XMB in a first session after an
+	// update). Once the XMB has drawn frames for 30 s, compile the rest of dev_flash in the background
+	// at low priority (cached modules are skipped), so later visits hit the cache. One worker on one
+	// JIT core. The XMB's plugins go first, then the libraries it loads. A finished run is remembered
+	// in LocalState/background_compile_done (app version, firmware, cache folder), so it runs once per
+	// update. LocalState/no_background_compile turns it off (0.1.31.4's version with every core
+	// starved the XMB; this one has been one worker since 0.1.32.1).
 	void start_background_precompile(u32 ticks)
 	{
 		static u32 since = 0;
@@ -1421,20 +1485,34 @@ namespace
 			return;
 
 		started = true;
-		// Off unless LocalState/background_compile exists: on 0.1.31.4 it kept the XMB from drawing.
-		if (!fs::is_file(g_local_dir + "background_compile"))
+		if (fs::is_file(g_local_dir + "no_background_compile"))
+			return;
+
+		const std::string done_path = g_local_dir + "background_compile_done";
+		std::string stamp = fmt::format("%s|%s|%s", RPCS3_XBOX_VERSION, utils::get_firmware_version(), fs::get_cache_dir());
+		if (fs::file f{done_path}; f && f.to_string() == stamp)
 			return;
 
 		sys_log.always()("UWP: compiling the remaining dev_flash PPU modules in the background");
-		g_fxo->init<named_thread>("PPU Background Compiler"sv, []()
+		g_fxo->init<named_thread>("PPU Background Compiler"sv, [done_path, stamp = std::move(stamp)]()
 		{
 			thread_ctrl::scoped_priority low_prio(-1);
 			// Libraries only: precompiling executables swaps out the running XMB's main module.
 			g_ppu_precompile_prx_only = true;
-			std::vector<std::string> dirs{vfs::get("/dev_flash/")};
 			const u64 start = get_system_time();
-			ppu_precompile(dirs, nullptr, false);
-			sys_log.always()("UWP: background PPU compile %s after %us", Emu.IsStopped() ? "stopped" : "finished", (get_system_time() - start) / 1'000'000);
+			for (const char* dir : {"/dev_flash/vsh/module/", "/dev_flash/sys/internal/", "/dev_flash/sys/external/"})
+			{
+				if (Emu.IsStopped())
+					break;
+				std::vector<std::string> dirs{vfs::get(dir)};
+				const u64 dir_start = get_system_time();
+				ppu_precompile(dirs, nullptr, false);
+				sys_log.notice("UWP: background PPU compile of %s took %us", dir, (get_system_time() - dir_start) / 1'000'000);
+			}
+			const bool stopped = Emu.IsStopped();
+			if (!stopped)
+				fs::write_file(done_path, fs::rewrite, stamp);
+			sys_log.always()("UWP: background PPU compile %s after %us", stopped ? "stopped" : "finished", (get_system_time() - start) / 1'000'000);
 		});
 	}
 
@@ -2106,6 +2184,8 @@ namespace
 		h.create_swap_chain = []() { return create_xaml_swap_chain(); };
 		h.launched = []()
 		{
+			// The PS button (View + Menu) opens the XAML pause menu, not RPCS3's home menu overlay.
+			pad::g_uwp_open_pause_menu = uwp_xaml::request_pause_menu;
 			// RPCS3 threads need large stacks; give the emulator its own thread.
 			CloseHandle(CreateThread(nullptr, 16 * 1024 * 1024, emulator_thread, nullptr, 0, nullptr));
 			CloseHandle(CreateThread(nullptr, 1024 * 1024, xaml_render_thread, nullptr, 0, nullptr));

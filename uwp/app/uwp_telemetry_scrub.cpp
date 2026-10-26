@@ -82,7 +82,13 @@ namespace uwp_telemetry
 					e--;
 				const std::string_view domain(s.data() + at + 1, e - at - 1);
 				const std::size_t dot = domain.rfind('.');
-				if (b == at || dot == std::string_view::npos || dot == 0 || domain.size() - dot < 3 || !is_alpha(domain.back()))
+				if (b == at || dot == std::string_view::npos || dot == 0 || domain.size() - dot < 3)
+					continue;
+				// The top-level domain is letters only: "68ms@285.82s" in the RSX hitch lines is a time, not an address.
+				bool tld = true;
+				for (std::size_t i = dot + 1; i < domain.size(); i++)
+					tld = tld && is_alpha(domain[i]);
+				if (!tld)
 					continue;
 				s.replace(b, e - b, "<email>");
 				at = b + 6;

@@ -545,6 +545,15 @@ public:
 					return nullptr;
 				}
 
+				// On damaged data the old method returns its whole scratch buffer, which LLVM then dies on
+				// ('string table empty', a damaged file on the Xbox's USB drive). When the trailer gave a
+				// plausible size, the output must match it; otherwise treat the file as missing (recompiled).
+				if (buf && out.size() != out_size)
+				{
+					jit_log.error("LLVM: Damaged module file (%u bytes instead of %u), recompiling it: '%s'", out.size(), out_size, path);
+					return nullptr;
+				}
+
 				buf = llvm::WritableMemoryBuffer::getNewUninitMemBuffer(out.size());
 				std::memcpy(buf->getBufferStart(), out.data(), out.size());
 			}

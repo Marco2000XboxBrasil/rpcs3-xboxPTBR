@@ -19,6 +19,7 @@ namespace vk
 		bool d32_sfloat_s8 : 1;
 		bool bgra8_linear : 1;
 		bool argb8_linear : 1;
+		bool rgba4_unorm : 1; // R4G4B4A4 textures; Dozen needs D3D12's A4B4G4R4, which the Xbox lacks
 	};
 
 	struct gpu_shader_types_support

@@ -10,6 +10,7 @@
 #include "Emu/Cell/timers.hpp"
 
 #include <functional>
+#include <thread>
 
 #ifdef RPCS3_UWP
 // Stencil masks and depth bias are baked into the pipelines instead of being dynamic state
@@ -43,7 +44,7 @@ namespace vk
 
 	// What the saver does and since when, logged when a stop has to wait for it: on .77 three stops (PS Home,
 	// 50 Cent) waited over 10 s for it, one with no new pipeline since its last 67 ms save.
-	enum uwp_saver_phase : u32 { uwp_saver_waiting, uwp_saver_getting, uwp_saver_writing };
+	enum uwp_saver_phase : u32 { uwp_saver_waiting, uwp_saver_getting, uwp_saver_writing, uwp_saver_renaming };
 	static atomic_t<u32> g_uwp_saver_phase = uwp_saver_waiting;
 	static atomic_t<u64> g_uwp_saver_phase_since = 0;
 
@@ -89,20 +90,37 @@ namespace vk
 			return;
 
 		// Timed apart: most saves take 0.1-0.3 s, but some took 7 s, 34 s (F1) and 254 s (Portal 2, with
-		// the cache on a USB drive), and a stop waits for a save that is running.
+		// the cache on a USB drive), and a stop waits for a save that is running. On 0.1.35.0 one write
+		// took 969 s (GTA V, 11 MB) and a Portal 2 stop waited 173 s+ on one, so write and rename are timed
+		// apart too. From here on only local copies are used: a stop may leave this thread writing.
 		const auto got = get_system_time();
+		const std::string path = g_uwp_pipeline_cache_path;
+		const std::string tmp = path + ".tmp";
 		uwp_saver_set_phase(uwp_saver_writing);
-		const std::string tmp = g_uwp_pipeline_cache_path + ".tmp";
-		if (fs::write_file(tmp, fs::rewrite, data) && fs::rename(tmp, g_uwp_pipeline_cache_path, true))
+		const bool written = fs::write_file(tmp, fs::rewrite, data);
+		const auto wrote = get_system_time();
+		uwp_saver_set_phase(uwp_saver_renaming);
+		if (written && fs::rename(tmp, path, true))
 		{
 			g_uwp_pipelines_saved = count;
 			const auto end = get_system_time();
 			const auto log = end - start >= 1'000'000 ? &rsx_log.warning : &rsx_log.notice;
-			(*log)("UWP: saved the pipeline cache (%u KB, %u pipelines made this session) in %.0f ms (%.0f ms getting it, %.0f ms writing it)",
-				data.size() >> 10, count, (end - start) / 1000., (got - start) / 1000., (end - got) / 1000.);
+			(*log)("UWP: saved the pipeline cache (%u KB, %u pipelines made this session) in %.0f ms (%.0f ms getting it, %.0f ms writing it, %.0f ms renaming it)",
+				data.size() >> 10, count, (end - start) / 1000., (got - start) / 1000., (wrote - got) / 1000., (end - wrote) / 1000.);
 		}
 		else
-			rsx_log.error("UWP: could not save the pipeline cache to %s (%s)", g_uwp_pipeline_cache_path, fs::g_tls_error);
+			rsx_log.error("UWP: could not save the pipeline cache to %s (%s, after %.0f ms)", path, fs::g_tls_error, (get_system_time() - got) / 1000.);
+	}
+
+	static const char* uwp_saver_phase_name(u32 phase)
+	{
+		switch (phase)
+		{
+		case uwp_saver_getting: return "getting the cache data";
+		case uwp_saver_writing: return "writing the file";
+		case uwp_saver_renaming: return "renaming the file";
+		default: return "waiting";
+		}
 	}
 #endif
 
@@ -543,15 +561,36 @@ namespace vk
 		{
 			const u64 stop_start = get_system_time();
 			const u32 phase = g_uwp_saver_phase;
-			rsx_log.notice("UWP: stopping the pipeline cache saver (%s for %.0f ms)",
-				phase == uwp_saver_getting ? "getting the cache data" : phase == uwp_saver_writing ? "writing the file" : "waiting",
-				(stop_start - g_uwp_saver_phase_since) / 1000.);
-			g_uwp_cache_saver.reset();
+			rsx_log.notice("UWP: stopping the pipeline cache saver (%s for %.0f ms)", uwp_saver_phase_name(phase), (stop_start - g_uwp_saver_phase_since) / 1000.);
+
+			// A file write on the USB drive can hang for minutes (969 s in GTA V, 173 s+ in a Portal 2 stop
+			// that the player then ended from Xbox Home). Give it 2 s, then let it finish in the background:
+			// it only uses its own copies by then, and the tmp file + rename keeps the old cache intact if
+			// the app ends first.
+			const auto in_file_io = [] { const u32 p = g_uwp_saver_phase; return p == uwp_saver_writing || p == uwp_saver_renaming; };
+			while (in_file_io() && get_system_time() - stop_start < 2'000'000)
+				std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+			bool left_running = false;
+			if (in_file_io())
+			{
+				rsx_log.warning("UWP: the pipeline cache saver is stuck %s (%.0f ms), leaving it to finish in the background",
+					uwp_saver_phase_name(g_uwp_saver_phase), (get_system_time() - g_uwp_saver_phase_since) / 1000.);
+				*g_uwp_cache_saver = thread_state::aborting; // ends its loop after this save, without a join
+				(void)g_uwp_cache_saver.release(); // never joined or freed; the thread ends on its own
+				left_running = true;
+			}
+			else
+			{
+				g_uwp_cache_saver.reset();
+			}
+
 			if (const u64 took = get_system_time() - stop_start; took >= 1'000'000)
 				rsx_log.warning("UWP: the pipeline cache saver took %.0f ms to stop", took / 1000.);
 
-			// Not again when the saver already wrote everything: the stop waits for this save.
-			if (g_pipeline_cache && g_uwp_pipelines_created != g_uwp_pipelines_saved)
+			// Not again when the saver already wrote everything: the stop waits for this save. Not either
+			// while a write still hangs: this one would wait on the same drive.
+			if (!left_running && g_pipeline_cache && g_uwp_pipelines_created != g_uwp_pipelines_saved)
 				uwp_save_pipeline_cache();
 		}
 #endif

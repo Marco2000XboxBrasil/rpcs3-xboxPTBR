@@ -23,6 +23,11 @@
 #include "Emu/NP/rpcn_config.h"
 #include "Loader/ISO.h"
 #include "Loader/PSF.h"
+#include "Loader/TROPUSR.h"
+#include "Emu/VFS.h"
+#include "Emu/IdManager.h"
+#include "Emu/savestate_utils.hpp"
+#include "Emu/Cell/Modules/sceNpTrophy.h"
 #include "Crypto/unpkg.h"
 #include "Utilities/Thread.h"
 #include "Utilities/File.h"
@@ -46,6 +51,8 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+
+extern atomic_t<bool> g_user_asked_for_screenshot; // RSXThread.cpp
 
 // Firmware library list (Emu/Cell/PPUModule.cpp): true = HLE by default.
 extern const std::map<std::string_view, int> g_prx_list;
@@ -505,6 +512,10 @@ namespace uwp_frontend
 			std::function<void()> on_open;
 			std::function<std::string()> value;
 			std::function<void()> on_change; // set: called instead of saving config.yml
+			// XAML shell only: shown in the in-game pause menu (under `section`) instead of the Settings tab.
+			bool pause = false;
+			std::string section;
+			std::vector<std::string> shown; // what the list shows for each of `values` (empty: the values)
 		};
 
 		struct modal
@@ -1389,6 +1400,256 @@ namespace uwp_frontend
 							if (rpcn_enabled())
 								set_rpcn_enabled(false);
 							refresh_rpcn_account();
+						});
+					}});
+				}
+				return items;
+			};
+			g_ui->menu = std::move(menu);
+			g_ui->dirty = true;
+		}
+
+		// ---- Pause menu pages: what RPCS3's home menu opened as overlays ----
+		std::string current_trophy_set()
+		{
+			auto* current = g_fxo->try_get<current_trophy_name>();
+			if (!current)
+				return {};
+			std::lock_guard lock(current->mtx);
+			return current->name;
+		}
+
+		struct trophy_row
+		{
+			std::string name, detail;
+			char grade = 'B';
+			bool earned = false;
+		};
+
+		// The running game's trophies (as overlay_trophy_list_dialog reads them).
+		bool load_trophies(const std::string& set, std::string& game, std::vector<trophy_row>& rows)
+		{
+			const std::string base = "/dev_hdd0/home/" + Emu.GetUsr() + "/trophy/" + set;
+			TROPUSRLoader usr;
+			if (!usr.Load(base + "/TROPUSR.DAT", base + "/TROPCONF.SFM").success)
+				return false;
+			fs::file config(vfs::get(base + "/TROPCONF.SFM"));
+			trophy_xml_document doc;
+			if (!config || !doc.Read(config.to_string()))
+				return false;
+			const std::shared_ptr<rXmlNode> root = doc.GetRoot();
+			for (std::shared_ptr<rXmlNode> n = root ? root->GetChildren() : nullptr; n; n = n->GetNext())
+			{
+				if (n->GetName() == "title-name")
+				{
+					game = n->GetNodeContent();
+					continue;
+				}
+				if (n->GetName() != "trophy")
+					continue;
+				trophy_row row;
+				const s32 id = atoi(n->GetAttribute("id").c_str());
+				row.earned = usr.GetTrophyUnlockState(id);
+				row.grade = n->GetAttribute("ttype").empty() ? 'B' : n->GetAttribute("ttype")[0];
+				const bool hidden = !n->GetAttribute("hidden").empty() && n->GetAttribute("hidden")[0] == 'y';
+				if (hidden && !row.earned)
+				{
+					row.name = "Hidden trophy";
+					row.detail = "Earn it to see what it is.";
+				}
+				else
+				{
+					for (std::shared_ptr<rXmlNode> c = n->GetChildren(); c; c = c->GetNext())
+					{
+						if (c->GetName() == "name")
+							row.name = c->GetNodeContent();
+						else if (c->GetName() == "detail")
+							row.detail = c->GetNodeContent();
+					}
+				}
+				rows.push_back(std::move(row));
+			}
+			return true;
+		}
+
+		void open_trophy_list()
+		{
+			const std::string set = current_trophy_set();
+			std::string game;
+			std::vector<trophy_row> rows;
+			if (set.empty() || !load_trophies(set, game, rows))
+			{
+				show_modal("Trophies", "This game's trophies couldn't be read (RPCS3.log has the details).");
+				return;
+			}
+			auto menu = std::make_unique<list_menu>();
+			menu->title = game.empty() ? std::string("Trophies") : "Trophies: " + game;
+			menu->header = [rows]()
+			{
+				u32 earned = 0;
+				std::map<char, std::pair<u32, u32>> by_grade;
+				for (const trophy_row& r : rows)
+				{
+					earned += r.earned;
+					by_grade[r.grade].first += r.earned;
+					by_grade[r.grade].second++;
+				}
+				std::string text = fmt::format("%u of %u earned", earned, rows.size());
+				for (const auto& [grade, name] : std::initializer_list<std::pair<char, const char*>>{{'P', "Platinum"}, {'G', "Gold"}, {'S', "Silver"}, {'B', "Bronze"}})
+				{
+					if (const auto it = by_grade.find(grade); it != by_grade.end())
+						text += fmt::format("   ·   %s %u/%u", name, it->second.first, it->second.second);
+				}
+				return text;
+			};
+			menu->build = [rows]()
+			{
+				std::vector<menu_item> items;
+				for (const trophy_row& r : rows)
+				{
+					const char* grade = r.grade == 'P' ? "Platinum" : r.grade == 'G' ? "Gold" : r.grade == 'S' ? "Silver" : "Bronze";
+					items.push_back({fmt::format("%s%s", r.earned ? "✓  " : "", r.name), fmt::format("%s · %s · %s", grade, r.earned ? "Earned" : "Not earned yet", r.detail), {}});
+				}
+				return items;
+			};
+			g_ui->menu = std::move(menu);
+			g_ui->dirty = true;
+		}
+
+		// RPCN friends, as RPCS3's friends overlay lists them; reloaded after each change.
+		uwp_rpcn::friends g_friends;
+		std::string g_friends_error;
+		bool g_friends_opening = false; // open_friends() ran: the first answer opens the screen
+
+		void show_friends_menu();
+
+		void reload_friends(std::string busy_text = "Loading the friends list...")
+		{
+			run_rpcn_job(std::move(busy_text), []() -> std::function<void()>
+			{
+				uwp_rpcn::friends list;
+				const uwp_rpcn::result res = uwp_rpcn::get_friends(list);
+				return [res, list = std::move(list)]()
+				{
+					g_friends = list;
+					g_friends_error = res.ok ? std::string() : res.message;
+					show_friends_menu();
+				};
+			});
+		}
+
+		void friend_action(std::string busy_text, std::function<uwp_rpcn::result()> call, std::string failed_title)
+		{
+			run_rpcn_job(std::move(busy_text), [call = std::move(call), failed_title = std::move(failed_title)]() -> std::function<void()>
+			{
+				const uwp_rpcn::result res = call();
+				return [res, failed_title]()
+				{
+					if (!res.ok)
+						show_modal(failed_title, res.message);
+					reload_friends();
+				};
+			});
+		}
+
+		void show_friends_menu()
+		{
+			// Only while the friends screen is up (or opening): a late answer doesn't open it again.
+			if (g_ui->menu ? g_ui->menu->title != "Friends" : !g_friends_opening)
+				return;
+			g_friends_opening = false;
+			auto menu = std::make_unique<list_menu>();
+			menu->title = "Friends";
+			menu->header = []()
+			{
+				if (!g_friends_error.empty())
+					return g_friends_error;
+				u32 online = 0;
+				for (const auto& f : g_friends.list)
+					online += f.online;
+				return fmt::format("%u friends, %u online. %u requests to answer, %u sent.", g_friends.list.size(), online, g_friends.requests_received.size(), g_friends.requests_sent.size());
+			};
+			menu->build = []()
+			{
+				std::vector<menu_item> items;
+				items.push_back({"Add a friend", "Sends a friend request to an RPCN user.", []()
+				{
+					ask_text(text_entry::kind::username, "Add a friend", "The friend's RPCN username.", {}, [](std::string name)
+					{
+						if (!uwp_rpcn::valid_username(name))
+						{
+							show_modal("Invalid username", "A username has 3 to 16 characters: letters, digits, - and _.");
+							return;
+						}
+						friend_action("Sending the request...", [name]() { return uwp_rpcn::add_friend(name); }, "Friend request not sent");
+					});
+				}});
+				items.push_back({"Refresh", "Loads the list again from the server.", []() { reload_friends(); }});
+				for (const std::string& name : g_friends.requests_received)
+				{
+					items.push_back({name, "Wants to be your friend: A to accept", [name]()
+					{
+						show_modal("Friend request", fmt::format("Accept %s as a friend?", name), "Accept", [name]()
+						{
+							friend_action("Accepting...", [name]() { return uwp_rpcn::add_friend(name); }, "Couldn't accept the request");
+						});
+					}});
+					items.push_back({"Reject " + name, "Rejects the friend request.", [name]()
+					{
+						show_modal("Friend request", fmt::format("Reject %s's request?", name), "Reject", [name]()
+						{
+							friend_action("Rejecting...", [name]() { return uwp_rpcn::remove_friend(name); }, "Couldn't reject the request");
+						});
+					}});
+				}
+				for (const auto& f : g_friends.list)
+				{
+					const std::string status = !f.online ? "Offline" : f.playing.empty() ? "Online" : "Online, playing " + f.playing;
+					items.push_back({f.name, status + ". A to remove.", [name = f.name]()
+					{
+						show_modal("Remove friend", fmt::format("Remove %s from your friends?", name), "Remove", [name]()
+						{
+							friend_action("Removing...", [name]() { return uwp_rpcn::remove_friend(name); }, "Couldn't remove the friend");
+						});
+					}});
+				}
+				for (const std::string& name : g_friends.requests_sent)
+				{
+					items.push_back({name, "Request sent, not answered yet. A to cancel it.", [name]()
+					{
+						show_modal("Friend request", fmt::format("Cancel your request to %s?", name), "Cancel request", [name]()
+						{
+							friend_action("Cancelling...", [name]() { return uwp_rpcn::remove_friend(name); }, "Couldn't cancel the request");
+						});
+					}});
+				}
+				for (const std::string& name : g_friends.blocked)
+					items.push_back({name, "Blocked.", {}});
+				return items;
+			};
+			g_ui->menu = std::move(menu);
+			g_ui->dirty = true;
+		}
+
+		void open_load_state_menu()
+		{
+			auto menu = std::make_unique<list_menu>();
+			menu->title = "Load a save state";
+			menu->header = []() { return std::string("The game starts again from where the state was saved. Progress since then is lost."); };
+			menu->build = []()
+			{
+				std::vector<menu_item> items;
+				for (u32 i = 1; i <= 4 && boot_current_game_savestate(true, i); i++)
+				{
+					items.push_back({i == 1 ? std::string("Newest save state") : fmt::format("Save state %u (older)", i), "A to load it.", [i]()
+					{
+						if (g_ui)
+							g_ui->menu.reset();
+						g_paused_by_menu = false;
+						g_host.run_on_main([i]()
+						{
+							ui_log.notice("UI: loading save state %u from the pause menu", i);
+							boot_current_game_savestate(false, i);
 						});
 					}});
 				}
@@ -2323,6 +2584,20 @@ namespace uwp_frontend
 			return false;
 		}
 
+		// In App mode the Xbox gives the app 1 GB instead of 5 GB, and every game dies at boot (out of video
+		// memory). A reinstall sets it back to App mode: LittleBigPlanet on 0.1.35.0 died 4 times in a row
+		// at 1.25 GB "of 1.000 GB" before the player switched it.
+		if (u64 limit = 0; rpcs3::utils::g_uwp_app_memory && (rpcs3::utils::g_uwp_app_memory(&limit), limit) && limit < (3ull << 30))
+		{
+			ui_log.error("UWP: not booting '%s': the app may use only %.2f GB (App mode)", path, limit / 1073741824.0);
+			set_status("Set the app type to Game to play", col_err);
+			post_modal("App type is set to App",
+				fmt::format("The Xbox gives this app only %.1f GB of memory, so games can't run. On the Xbox Home screen, "
+					"highlight RPCS3, press the Menu button, choose \"Manage game and add-ons\" or \"View details\", "
+					"and set App type to Game. Then start the app again.", limit / 1073741824.0));
+			return false;
+		}
+
 		// Without firmware every firmware library must use RPCS3's built-in (HLE) version,
 		// otherwise the boot stops with "firmware missing". With firmware, use the defaults.
 		if (!firmware_installed())
@@ -2524,9 +2799,108 @@ namespace uwp_frontend
 		}
 
 		// The settings list of the XAML pages; index-stable for the lifetime of the app.
+		// The pause menu's settings: what RPCS3's home menu offers while a game runs (overlay_home_menu_settings.cpp),
+		// minus what has no use on the Xbox (audio backend, fullscreen, mouse and camera, PS Move, recording).
+		// They apply to the running game as they do in the home menu and are saved to config.yml.
+		std::vector<setting_item> make_pause_settings()
+		{
+			std::vector<setting_item> out;
+			const auto add = [&](std::string_view section, std::string label, cfg::_base* node, std::vector<std::string> values, std::string note,
+				std::string_view unit = {}, std::vector<std::string> shown = {})
+			{
+				setting_item item{std::move(label), node, std::move(values), std::move(note)};
+				item.pause = true;
+				item.section = section;
+				if (shown.empty() && !unit.empty())
+				{
+					for (const std::string& v : item.values)
+						shown.push_back(v + std::string(unit));
+				}
+				item.shown = std::move(shown);
+				out.push_back(std::move(item));
+			};
+			const auto range = [](s64 from, s64 to, s64 step)
+			{
+				std::vector<std::string> v;
+				for (s64 i = from; i <= to; i += step)
+					v.push_back(std::to_string(i));
+				return v;
+			};
+			const std::vector<std::string> on_off = {"false", "true"};
+
+			add("Video", "Resolution scale", &g_cfg.video.resolution_scale_percent, {"50", "75", "100", "125", "150", "200", "250", "300"}, "Internal rendering resolution in percent of 720p.", "%");
+			add("Video", "Resolution scale threshold", &g_cfg.video.min_scalable_dimension, {"1", "16", "32", "64", "128", "256", "512"}, "Smaller render targets are not scaled.", " px");
+			add("Video", "VSync", &g_cfg.video.vsync, {}, {});
+			add("Video", "Frame limit", &g_cfg.video.frame_limit, {}, "Auto follows the game's refresh rate.");
+			add("Video", "Anisotropic filter", &g_cfg.video.anisotropic_level_override, {"0", "2", "4", "8", "16"}, "Sharper textures at an angle. Auto lets the game choose.", {}, {"Auto", "2x", "4x", "8x", "16x"});
+			add("Video", "Output scaling", &g_cfg.video.output_scaling, {}, "How the picture is scaled to the screen. FSR sharpens it.");
+			add("Video", "FSR sharpening", &g_cfg.video.rcas_sharpening_intensity, range(0, 100, 10), "Only with FSR output scaling.", "%");
+			add("Video", "Stretch to the screen", &g_cfg.video.stretch_to_display_area, on_off, "Fills the screen instead of keeping the game's aspect ratio.");
+
+			add("Audio", "Volume", &g_cfg.audio.volume, {"0", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100", "125", "150", "175", "200"}, {}, "%");
+			add("Audio", "Audio buffering", &g_cfg.audio.enable_buffering, on_off, "Smooths out crackling when the game runs below full speed.");
+			add("Audio", "Audio buffer length", &g_cfg.audio.desired_buffer_duration, {"20", "34", "50", "75", "100", "150", "200", "250"}, "Longer is smoother, with more delay.", " ms");
+			add("Audio", "Time stretching", &g_cfg.audio.enable_time_stretching, on_off, "Slows the sound down with the game instead of breaking it up (needs buffering).");
+			add("Audio", "Time stretching threshold", &g_cfg.audio.time_stretching_threshold, range(0, 100, 5), "Buffer fill below which stretching starts.", "%");
+
+			add("Stats overlay", "Stats overlay", &g_cfg.video.perf_overlay.enabled, on_off, "FPS, CPU and GPU load while a game runs.");
+			add("Stats overlay", "Stats detail", &g_cfg.video.perf_overlay.level, {"Minimal", "Low", "Medium", "High"}, "Minimal = FPS. Low adds CPU. Medium adds PPU/SPU/RSX. High adds GPU load.");
+			add("Stats overlay", "Framerate graph", &g_cfg.video.perf_overlay.framerate_graph_enabled, on_off, {});
+			add("Stats overlay", "Frame time graph", &g_cfg.video.perf_overlay.frametime_graph_enabled, on_off, {});
+			add("Stats overlay", "Framerate graph detail", &g_cfg.video.perf_overlay.framerate_graph_detail_level, {}, {});
+			add("Stats overlay", "Frame time graph detail", &g_cfg.video.perf_overlay.frametime_graph_detail_level, {}, {});
+			add("Stats overlay", "Framerate graph points", &g_cfg.video.perf_overlay.framerate_datapoint_count, {"20", "50", "100", "200", "400"}, {});
+			add("Stats overlay", "Frame time graph points", &g_cfg.video.perf_overlay.frametime_datapoint_count, {"50", "100", "170", "300", "600"}, {});
+			add("Stats overlay", "Update interval", &g_cfg.video.perf_overlay.update_interval, {"100", "200", "350", "500", "1000"}, {}, " ms");
+			add("Stats overlay", "Position", &g_cfg.video.perf_overlay.position, {}, {});
+			add("Stats overlay", "Center horizontally", &g_cfg.video.perf_overlay.center_x, on_off, {});
+			add("Stats overlay", "Center vertically", &g_cfg.video.perf_overlay.center_y, on_off, {});
+			add("Stats overlay", "Horizontal margin", &g_cfg.video.perf_overlay.margin_x, range(0, 20, 1), {}, "%");
+			add("Stats overlay", "Vertical margin", &g_cfg.video.perf_overlay.margin_y, range(0, 20, 1), {}, "%");
+			add("Stats overlay", "Font size", &g_cfg.video.perf_overlay.font_size, range(6, 36, 2), {}, " px");
+			add("Stats overlay", "Opacity", &g_cfg.video.perf_overlay.opacity, range(0, 100, 10), {}, "%");
+
+			add("Notifications", "Trophy popups", &g_cfg.misc.show_trophy_popups, on_off, {});
+			add("Notifications", "RPCN popups", &g_cfg.misc.show_rpcn_popups, on_off, "Friend and connection messages.");
+			add("Notifications", "Shader compile hint", &g_cfg.misc.show_shader_compilation_hint, on_off, {});
+			add("Notifications", "PPU compile hint", &g_cfg.misc.show_ppu_compilation_hint, on_off, {});
+			add("Notifications", "Auto save / load hint", &g_cfg.misc.show_autosave_autoload_hint, on_off, {});
+			add("Notifications", "Pressure sensitivity hint", &g_cfg.misc.show_pressure_intensity_toggle_hint, on_off, {});
+			add("Notifications", "Analog limiter hint", &g_cfg.misc.show_analog_limiter_toggle_hint, on_off, {});
+			add("Notifications", "Fatal error hints", &g_cfg.misc.show_fatal_error_hints, on_off, {});
+			add("Notifications", "Music during boot", &g_cfg.misc.play_music_during_boot, on_off, "The game's music while it starts.");
+
+			add("Input", "Keep controllers connected", &g_cfg.io.keep_pads_connected, on_off, "Games keep seeing a controller that was turned off.");
+			add("Input", "Controller thread mode", &g_cfg.io.pad_mode, {}, {});
+			add("Input", "Controller poll sleep", &g_cfg.io.pad_sleep, {"0", "100", "250", "500", "1000", "2000", "5000"}, "Lower reacts faster and uses more CPU.", " µs");
+
+			const std::string risky = "Changes the game's timing: wrong values can slow, speed up, hang or crash games.";
+			add("Advanced (can break games)", "Preferred SPU threads", &g_cfg.core.preferred_spu_threads, range(0, 6, 1), "0 = automatic.");
+			add("Advanced (can break games)", "Max SPURS threads", &g_cfg.core.max_spurs_threads, range(1, 6, 1), risky);
+			add("Advanced (can break games)", "Max CPU preemptions", &g_cfg.core.max_cpu_preempt_count_per_frame, {"0", "10", "25", "50", "100", "200", "400"}, risky);
+			add("Advanced (can break games)", "Accurate RSX reservation access", &g_cfg.core.rsx_accurate_res_access, on_off, "Slower; fixes some games.");
+			add("Advanced (can break games)", "Sleep timers accuracy", &g_cfg.core.sleep_timers_accuracy, {}, risky);
+			add("Advanced (can break games)", "PPU event wake-up delay", &g_cfg.core.ppu_event_wakeup_delay, {"0", "10", "25", "50", "100", "200"}, risky, " µs");
+			add("Advanced (can break games)", "Driver wake-up delay", &g_cfg.video.driver_wakeup_delay, {"0", "1", "20", "40", "100", "200", "400", "800"}, risky, " µs");
+			add("Advanced (can break games)", "Vblank rate", &g_cfg.video.vblank_rate, {"30", "50", "60", "90", "120", "150", "180", "240"}, risky, " Hz");
+			add("Advanced (can break games)", "Vblank NTSC fixup", &g_cfg.video.vblank_ntsc, on_off, {});
+			add("Advanced (can break games)", "RSX memory tiling", &g_cfg.video.handle_tiled_memory, on_off, "Fixes some games' graphics; slower.");
+
+			add("Debug", "Debug overlay", &g_cfg.video.debug_overlay, on_off, {});
+			add("Debug", "Input debug overlay", &g_cfg.io.pad_debug_overlay, on_off, {});
+			add("Debug", "Texture LOD bias", &g_cfg.video.texture_lod_bias, {"-2", "-1.5", "-1", "-0.5", "0", "0.5", "1", "1.5", "2"}, "Negative is sharper, positive is blurrier.");
+			return out;
+		}
+
 		std::vector<setting_item>& xaml_settings()
 		{
-			static std::vector<setting_item> items = make_settings();
+			static std::vector<setting_item> items = []()
+			{
+				std::vector<setting_item> all = make_settings();
+				for (setting_item& item : make_pause_settings())
+					all.push_back(std::move(item));
+				return all;
+			}();
 			return items;
 		}
 
@@ -2672,13 +3046,28 @@ namespace uwp_frontend
 			}
 			v.values = setting_values(item);
 			v.toggle = v.values.size() == 2 && v.values[0] == "false" && v.values[1] == "true";
-			for (const std::string& value : v.values)
-				v.shown.push_back(v.toggle ? (value == "true" ? "On" : "Off") : value);
+			for (usz j = 0; j < v.values.size(); j++)
+				v.shown.push_back(v.toggle ? (v.values[j] == "true" ? "On" : "Off") : j < item.shown.size() ? item.shown[j] : v.values[j]);
 			const std::string cur = item.node->to_string();
-			const auto it = std::find(v.values.begin(), v.values.end(), cur);
+			auto it = std::find(v.values.begin(), v.values.end(), cur);
+			if (it == v.values.end())
+			{
+				// Numbers: "4" in the list is "4.000000" in a float setting, and a value set elsewhere picks the nearest entry.
+				char* end = nullptr;
+				const double cur_num = std::strtod(cur.c_str(), &end);
+				if (end != cur.c_str())
+				{
+					it = std::min_element(v.values.begin(), v.values.end(), [cur_num](const std::string& a, const std::string& b)
+					{
+						return std::abs(std::strtod(a.c_str(), nullptr) - cur_num) < std::abs(std::strtod(b.c_str(), nullptr) - cur_num);
+					});
+				}
+			}
 			v.current = it == v.values.end() ? 0 : static_cast<int>(it - v.values.begin());
-			// What the running game picks up without a restart.
-			v.in_game = item.label == "Stats overlay" || item.label == "Stats detail" || item.label == "Frame limit";
+			// The pause menu: what RPCS3's home menu changes while a game runs. The Settings tab shows the rest.
+			v.in_game = item.pause;
+			v.pause_only = item.pause;
+			v.section = item.section;
 			out.push_back(std::move(v));
 		}
 		return out;
@@ -2936,6 +3325,75 @@ namespace uwp_frontend
 			g_paused_by_menu = false;
 			ui_log.notice("UI: stopping the game from the pause menu");
 			Emu.GracefulShutdown(false, true);
+		});
+	}
+
+	bool has_trophies()
+	{
+		return !current_trophy_set().empty();
+	}
+
+	void open_trophies()
+	{
+		if (g_ui && g_in_game)
+			open_trophy_list();
+	}
+
+	void open_friends()
+	{
+		if (!g_ui || !g_in_game)
+			return;
+		g_ui->menu.reset();
+		g_friends = {};
+		g_friends_error = "Loading...";
+		g_friends_opening = true;
+		show_friends_menu();
+		reload_friends();
+	}
+
+	void save_state()
+	{
+		g_host.run_on_main([]()
+		{
+			g_paused_by_menu = false;
+			const bool suspend = g_cfg.savestate.suspend_emu.get();
+			ui_log.notice("UI: save state from the pause menu (%s)", suspend ? "and quit" : "and go on");
+			// As RPCS3's home menu does it: save, then boot the state again and go on playing.
+			if (!suspend)
+			{
+				Emu.after_kill_callback = []() { Emu.Restart(true, false); };
+				Emu.SetContinuousMode(true);
+			}
+			Emu.Kill(false, true);
+		});
+	}
+
+	bool has_save_states()
+	{
+		return boot_current_game_savestate(true, 1);
+	}
+
+	void open_load_state()
+	{
+		if (g_ui && g_in_game)
+			open_load_state_menu();
+	}
+
+	void take_screenshot()
+	{
+		ui_log.notice("UI: screenshot from the pause menu");
+		g_user_asked_for_screenshot = true;
+	}
+
+	void restart_game()
+	{
+		g_host.run_on_main([]()
+		{
+			g_paused_by_menu = false;
+			ui_log.notice("UI: restarting the game from the pause menu");
+			// As RPCS3's home menu does it: keep the game screen up across the stop and the new boot.
+			Emu.SetContinuousMode(true);
+			Emu.Restart(true);
 		});
 	}
 }

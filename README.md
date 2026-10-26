@@ -66,8 +66,7 @@ storage is far too small), and your own PS3 firmware file (`PS3UPDAT.PUP`, 4.93 
 | --- | --- |
 | A / B / X / Y | Cross / Circle / Square / Triangle |
 | Menu / View | Start / Select |
-| Tap View + Menu | PS button |
-| Hold View + Menu ~1 s | Pause menu (resume, stop the game, live settings) |
+| View + Menu (PS button) | Pause menu (resume, restart, trophies, friends, screenshot, save states, stop the game, the game's settings). On the XMB, hold ~1 s |
 
 In the app menu: D-pad or left stick to move, A select, B back, LB/RB switch tabs, Y rescan.
 

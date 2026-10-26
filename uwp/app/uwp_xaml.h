@@ -45,6 +45,6 @@ namespace uwp_xaml
 	// Runs the XAML application on the calling thread (Application.Start); returns when the app exits.
 	int run(const host& h);
 
-	// Any thread: View + Menu was held while a game runs; the pause menu opens on the next UI tick.
+	// Any thread: the PS button (View + Menu) was pressed in a game; the pause menu opens on the next UI tick.
 	void request_pause_menu();
 }

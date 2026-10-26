@@ -325,11 +325,40 @@ namespace vk
 		}
 
 		// LogicOp and Blend are mutually exclusive. If both are enabled, LogicOp takes precedence.
+#ifdef RPCS3_UWP
+		// D3D12 does logic ops on UINT render targets only, and Dozen passes them on for the UNORM ones
+		// used here, so the pipeline fails with E_INVALIDARG and RSX dies with "Out of host memory"
+		// (BLEACH: Soul Resurreccion, an INVERT draw on B8G8R8A8). The ops that are plain writes become
+		// those writes; the rest draw without the logic op, which only gets that draw's colours wrong.
+		if (REGS(ctx)->logic_op_enabled())
+		{
+			switch (REGS(ctx)->logic_operation())
+			{
+			case rsx::logic_op::logic_copy:
+				break;
+			case rsx::logic_op::logic_noop:
+				for (uint index = 0; index < num_draw_buffers; ++index)
+					properties.state.set_color_mask(index, false, false, false, false);
+				break;
+			case rsx::logic_op::logic_clear:
+				for (uint index = 0; index < num_draw_buffers; ++index)
+					properties.state.enable_blend(index, VK_BLEND_FACTOR_ZERO, VK_BLEND_FACTOR_ZERO, VK_BLEND_FACTOR_ZERO, VK_BLEND_FACTOR_ZERO, VK_BLEND_OP_ADD, VK_BLEND_OP_ADD);
+				break;
+			default:
+				if (static atomic_t<bool> s_logged = false; !s_logged.exchange(true))
+					rsx_log.todo("UWP: logic op 0x%x drawn without it (D3D12 has logic ops for UINT targets only)", static_cast<u32>(REGS(ctx)->logic_operation()));
+				break;
+			}
+		}
+		else
+#else
 		if (REGS(ctx)->logic_op_enabled())
 		{
 			properties.state.enable_logic_op(vk::get_logic_op(REGS(ctx)->logic_operation()));
 		}
-		else if (!force_disable_blending)
+		else
+#endif
+		if (!force_disable_blending)
 		{
 			VkBlendFactor sfactor_rgb, sfactor_a, dfactor_rgb, dfactor_a;
 			VkBlendOp equation_rgb, equation_a;

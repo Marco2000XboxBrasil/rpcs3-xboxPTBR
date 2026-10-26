@@ -9154,6 +9154,11 @@ struct spu_llvm_worker
 	}
 };
 
+#ifdef RPCS3_UWP
+// Background (tier 2) SPU LLVM compile workers; 0 keeps RPCS3's count (set in uwp_main.cpp)
+u32 g_uwp_spu_llvm_workers = 4;
+#endif
+
 // SPU LLVM recompiler thread context
 struct spu_llvm
 {
@@ -9241,6 +9246,17 @@ struct spu_llvm
 		{
 			worker_count = 2;
 		}
+
+#ifdef RPCS3_UWP
+		// The Xbox's 8 threads get 2 workers above. New SPU code runs as slow interpreter calls until
+		// a worker gets to it, which held GTA V at 1-2 fps for ~40 s when it reached a new area.
+		if (g_uwp_spu_llvm_workers)
+		{
+			worker_count = g_uwp_spu_llvm_workers;
+		}
+
+		spu_log.always()("SPU LLVM: %u background compile workers", worker_count);
+#endif
 
 		u32 worker_index = 0;
 		u32 notify_compile_count = 0;

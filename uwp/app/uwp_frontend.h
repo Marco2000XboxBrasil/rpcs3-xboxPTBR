@@ -127,6 +127,8 @@ namespace uwp_frontend
 		int current = 0;
 		bool toggle = false;  // exactly false / true: shown as a switch
 		bool in_game = false; // takes effect while a game runs (shown in the pause menu)
+		bool pause_only = false; // not on the Settings tab
+		std::string section;     // pause menu: the group heading
 		bool action = false;  // no value list: a screen that open_setting() opens (RPCN account); `note` stays, `value` is shown
 		std::string value;
 	};
@@ -196,4 +198,15 @@ namespace uwp_frontend
 	void suspend_game();
 	void resume_game();
 	void stop_game();
+	// Pause menu: stops the game and boots it again.
+	void restart_game();
+
+	// The rest of RPCS3's home menu, for the pause menu (UI thread). The lists open as screens (get_screen()).
+	bool has_trophies(); // the running game has a trophy set
+	void open_trophies();
+	void open_friends(); // RPCN friends and requests (needs an account)
+	void save_state();   // saves and goes on playing (or quits, with the Suspend setting)
+	bool has_save_states();
+	void open_load_state();
+	void take_screenshot(); // the next frame, once the pause menu has closed
 }

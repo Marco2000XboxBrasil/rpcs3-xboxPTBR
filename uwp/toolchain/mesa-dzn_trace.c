@@ -6,7 +6,8 @@
 void dzn_trace_note(const void *list, const char *method);
 void dzn_trace_dump(const void *list, unsigned last);
 
-#define DZN_TRACE_RING 4096
+/* 4096 was too short: MK Komplete's failing list had more calls than that since its Reset. */
+#define DZN_TRACE_RING 65536
 
 struct dzn_trace_entry { const void *list; const char *method; };
 static struct dzn_trace_entry dzn_trace_ring[DZN_TRACE_RING];
@@ -65,7 +66,7 @@ static ID3D12GraphicsCommandList *probe_list;
 static mtx_t probe_mtx;
 static once_flag probe_once = ONCE_FLAG_INIT;
 static int probe_enabled = -1;
-static unsigned probe_count, probe_failures;
+static unsigned probe_count, probe_failures, probe_limit = 200000;
 
 static void
 probe_init_mtx(void)
@@ -76,9 +77,14 @@ probe_init_mtx(void)
 void *
 dzn_probe_begin(void *list)
 {
-   if (probe_enabled < 0)
-      probe_enabled = getenv("DZN_PROBE") != NULL;
-   if (!probe_enabled || probe_failures >= 32 || probe_count >= 200000)
+   if (probe_enabled < 0) {
+      /* DZN_PROBE=<n> probes the first n calls, DZN_PROBE=0 all of them (a crash minutes into a game). */
+      const char *env = getenv("DZN_PROBE");
+      probe_enabled = env != NULL;
+      if (env && *env >= '0' && *env <= '9')
+         probe_limit = strtoul(env, NULL, 10);
+   }
+   if (!probe_enabled || probe_failures >= 32 || (probe_limit && probe_count >= probe_limit))
       return NULL;
 
    call_once(&probe_once, probe_init_mtx);

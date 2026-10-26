@@ -398,7 +398,7 @@ index 4a4dde5..0d809cc 100644
  }
  
 diff --git a/src/microsoft/vulkan/dzn_pipeline.c b/src/microsoft/vulkan/dzn_pipeline.c
-index 65ccc0e..52f0b4b 100644
+index 65ccc0e..75ba4f6 100644
 --- a/src/microsoft/vulkan/dzn_pipeline.c
 +++ b/src/microsoft/vulkan/dzn_pipeline.c
 @@ -246,6 +246,14 @@ dzn_pipeline_get_nir_shader(struct dzn_device *device,
@@ -488,7 +488,7 @@ index 65ccc0e..52f0b4b 100644
  static VkResult
  dzn_graphics_pipeline_create(struct dzn_device *device,
                               VkPipelineCache cache,
-@@ -2061,6 +2103,8 @@ dzn_graphics_pipeline_create(struct dzn_device *device,
+@@ -2061,11 +2103,30 @@ dzn_graphics_pipeline_create(struct dzn_device *device,
                                                 &IID_ID3D12PipelineState,
                                                 (void **)&pipeline->base.state);
        if (FAILED(hres)) {
@@ -497,7 +497,63 @@ index 65ccc0e..52f0b4b 100644
           ret = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
           goto out;
        }
-@@ -2180,6 +2224,364 @@ update_stencil_state(struct dzn_physical_device *pdev,
+ 
+       dzn_graphics_pipeline_cleanup_dxil_shaders(pipeline);
++   } else if (dzn_graphics_pipeline_get_desc_template(pipeline, ib_strip_cut) &&
++              !pipeline->zsa.stencil_test.dynamic_compare_mask &&
++              !pipeline->zsa.stencil_test.dynamic_write_mask &&
++              !(pipeline->zsa.dynamic_depth_bias && !pdev->options16.DynamicDepthBiasSupported)) {
++      /* Xbox UWP port: the strip cut value is the only variant key left, and primitive restart only
++       * matters for indexed draws, so build the 16- and 32-bit index variants here, on the thread that
++       * creates the pipeline (RPCS3's async compiler). Left to the first draw, each one is a D3D12 PSO
++       * compile on the thread recording commands: LittleBigPlanet froze for 0.5-3.7 s building 72 of
++       * them in a few seconds. */
++      static const D3D12_INDEX_BUFFER_STRIP_CUT_VALUE cuts[] = {
++         D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_0xFFFF,
++         D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_0xFFFFFFFF,
++      };
++      for (unsigned i = 0; i < ARRAY_SIZE(cuts); i++) {
++         const struct dzn_graphics_pipeline_variant_key key = { .ib_strip_cut = cuts[i] };
++         dzn_graphics_pipeline_get_state(pipeline, &key);
++      }
+    }
+ 
+    dzn_graphics_pipeline_cleanup_nir_shaders(pipeline);
+@@ -2089,13 +2150,15 @@ mask_key_for_stencil_state(struct dzn_physical_device *pdev,
+    if (pdev->options14.IndependentFrontAndBackStencilRefMaskSupported) {
+       const D3D12_DEPTH_STENCIL_DESC2 *ds_templ =
+          dzn_graphics_pipeline_get_desc_template(pipeline, ds);
+-      if (ds_templ && ds_templ->StencilEnable) {
++      if (ds_templ && ds_templ->StencilEnable && pipeline->zsa.stencil_test.dynamic_compare_mask) {
+          if (ds_templ->FrontFace.StencilFunc != D3D12_COMPARISON_FUNC_NEVER &&
+              ds_templ->FrontFace.StencilFunc != D3D12_COMPARISON_FUNC_ALWAYS)
+             masked_key->stencil_test.front.compare_mask = key->stencil_test.front.compare_mask;
+          if (ds_templ->BackFace.StencilFunc != D3D12_COMPARISON_FUNC_NEVER &&
+              ds_templ->BackFace.StencilFunc != D3D12_COMPARISON_FUNC_ALWAYS)
+             masked_key->stencil_test.back.compare_mask = key->stencil_test.back.compare_mask;
++      }
++      if (ds_templ && ds_templ->StencilEnable) {
+          if (pipeline->zsa.stencil_test.dynamic_write_mask) {
+             masked_key->stencil_test.front.write_mask = key->stencil_test.front.write_mask;
+             masked_key->stencil_test.back.write_mask = key->stencil_test.back.write_mask;
+@@ -2104,13 +2167,15 @@ mask_key_for_stencil_state(struct dzn_physical_device *pdev,
+    } else {
+       const D3D12_DEPTH_STENCIL_DESC1 *ds_templ =
+          dzn_graphics_pipeline_get_desc_template(pipeline, ds);
+-      if (ds_templ && ds_templ->StencilEnable) {
++      if (ds_templ && ds_templ->StencilEnable && pipeline->zsa.stencil_test.dynamic_compare_mask) {
+          if (ds_templ->FrontFace.StencilFunc != D3D12_COMPARISON_FUNC_NEVER &&
+              ds_templ->FrontFace.StencilFunc != D3D12_COMPARISON_FUNC_ALWAYS)
+             masked_key->stencil_test.front.compare_mask = key->stencil_test.front.compare_mask;
+          if (ds_templ->BackFace.StencilFunc != D3D12_COMPARISON_FUNC_NEVER &&
+              ds_templ->BackFace.StencilFunc != D3D12_COMPARISON_FUNC_ALWAYS)
+             masked_key->stencil_test.back.compare_mask = key->stencil_test.back.compare_mask;
++      }
++      if (ds_templ && ds_templ->StencilEnable) {
+          if (pipeline->zsa.stencil_test.dynamic_write_mask) {
+             masked_key->stencil_test.front.write_mask = key->stencil_test.front.write_mask;
+             masked_key->stencil_test.back.write_mask = key->stencil_test.back.write_mask;
+@@ -2180,6 +2245,364 @@ update_stencil_state(struct dzn_physical_device *pdev,
     }
  }
  
@@ -862,7 +918,7 @@ index 65ccc0e..52f0b4b 100644
  ID3D12PipelineState *
  dzn_graphics_pipeline_get_state(struct dzn_graphics_pipeline *pipeline,
                                  const struct dzn_graphics_pipeline_variant_key *key)
-@@ -2236,10 +2638,14 @@ dzn_graphics_pipeline_get_state(struct dzn_graphics_pipeline *pipeline,
+@@ -2236,10 +2659,14 @@ dzn_graphics_pipeline_get_state(struct dzn_graphics_pipeline *pipeline,
  
        update_stencil_state(pdev, pipeline, stream_buf, &masked_key);
  

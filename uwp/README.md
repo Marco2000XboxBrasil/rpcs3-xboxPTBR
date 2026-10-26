@@ -188,8 +188,7 @@ Publishing a GitHub release tagged `v0.1.34.xx` is all an update notice needs.
 | --- | --- |
 | A / B / X / Y | Cross / Circle / Square / Triangle |
 | Menu / View | Start / Select |
-| Tap View + Menu | PS button |
-| Hold View + Menu ~1 s | Pause menu: resume, stop the game (back to the app menu), live settings |
+| View + Menu (PS button) | Pause menu: resume, restart, trophies, RPCN friends, screenshot (PNG in `<drive>/RPCS3/screenshots/`), save / load state (in `<drive>/RPCS3/savestates/`), stop the game (back to the app menu), and the settings of RPCS3's home menu (video, audio, stats overlay, notifications, input, advanced, debug) that apply to the running game. In a game it replaces RPCS3's own home menu; on the XMB a tap is the PS button and holding ~1 s opens the pause menu |
 
 Menu: D-pad or left stick to move, A select, B back, LB/RB tabs, Y rescan. The Xbox button stays
 with the system. In the pause menu the game is paused; B resumes it.
@@ -203,7 +202,10 @@ Empty files in the app's `LocalState` folder (via Device Portal file explorer):
 - `storage`: `local` or a folder path for the cache location.
 - `system_styles`: keep the standard (Windows 10) control styles instead of WinUI 2's.
 - `legacy_ui`: use the earlier software-drawn menu instead of the XAML one (no pause menu; hold View + Menu stops the game).
-- `precompile`, `background_compile`: turn LLVM precompilation / background PRX compile back on.
+- `precompile`: turn LLVM precompilation back on.
+- `no_background_compile`: don't compile the firmware's PRX modules in the background once the XMB
+  has run for 30 s (on by default; `background_compile_done` remembers a finished run per app
+  version, firmware and cache folder; delete it to run again).
 - `no_network`, `null_audio`, `null_renderer`, `heap_guard`, `ext_host_mem`: debugging switches.
 - `compile_headroom`, `compile_job_mb`: a new PPU/SPU compile job starts only while
   headroom + job_mb per running job is left of the app's memory (defaults 1280 and 128 MB).
@@ -212,6 +214,9 @@ Empty files in the app's `LocalState` folder (via Device Portal file explorer):
 - `rsx_idle_sleep`: microseconds the RSX thread sleeps per check once the game has given it
   nothing to do, or kept it waiting on a semaphore, for 1 ms, instead of spinning (default 200;
   `0` spins as RPCS3 does).
+- `spu_workers`: number of SPU LLVM background compile threads (default 4; RPCS3 picks 2 for the
+  Xbox's 8 threads; `0` uses RPCS3's count). More threads shorten the slow stretch while a game's
+  new SPU code compiles (GTA V new areas, WipEout HD's first race).
 - `dynamic_stencil_bias`: keep stencil masks and depth bias as Vulkan dynamic state. By default
   they are baked into the pipelines, because Dozen otherwise builds a D3D12 PSO for each new value
   at draw time on the RSX thread (hitches of 0.1-4 s in Portal 2).
