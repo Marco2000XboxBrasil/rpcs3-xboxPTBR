@@ -18,6 +18,8 @@ namespace vk
 	// Time in queue submits (lock + vkQueueSubmit) and in the swapchain's frame hand-over
 	// (fence wait for the previous frame, copy to the shell); read by the hitch frame log.
 	atomic_t<u64> g_uwp_submit_us{0}, g_uwp_present_wait_us{0}, g_uwp_present_copy_us{0};
+	// The swapchain's copy of each frame to the shell runs on a thread of its own (swapchain_uwp.hpp).
+	bool g_uwp_async_present_copy = true;
 #endif
 
 	void acquire_global_submit_lock()
