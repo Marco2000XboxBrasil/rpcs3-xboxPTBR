@@ -87,6 +87,7 @@ namespace rsx { extern u32 g_uwp_rsx_idle_sleep_us; extern bool g_uwp_fifo_parti
 namespace rsx { extern atomic_t<u64> g_uwp_mem_poll_at_us, g_uwp_mem_poll_max_us; } // RSXThread.cpp
 extern u64 g_uwp_usleep_spin_us; // lv2.cpp
 extern bool g_uwp_um_wait; // lv2.cpp
+extern u32 g_uwp_spu_llvm_workers; // SPUCommonRecompiler.cpp
 extern std::string g_uwp_config_override_path; // System.cpp
 
 namespace
@@ -981,6 +982,13 @@ namespace
 					rpcs3::utils::uwp_compile_gate::job_mb = v;
 			}
 			sys_log.always()("UWP: compile memory headroom: %u MB + %u MB per running job", rpcs3::utils::uwp_compile_gate::headroom_mb, rpcs3::utils::uwp_compile_gate::job_mb);
+			// SPU LLVM background compile workers (RPCS3 picks 2 for 8 threads). LocalState/spu_workers
+			// holds another count (1-8); 0 gives RPCS3's.
+			if (fs::file f{g_local_dir + "spu_workers"})
+			{
+				g_uwp_spu_llvm_workers = std::min<u32>(static_cast<u32>(std::strtoul(f.to_string().c_str(), nullptr, 10)), 8);
+			}
+			sys_log.always()("UWP: SPU LLVM background compile workers: %s", g_uwp_spu_llvm_workers ? std::to_string(g_uwp_spu_llvm_workers) : std::string("RPCS3 default"));
 			// Desktop RPCS3 raises the system timer resolution (rpcs3.cpp); without it every short
 			// sleep and timeout of the emulated threads lasts a whole timer tick. Measured below
 			// before and after. An empty LocalState/default_timer file leaves it alone.
