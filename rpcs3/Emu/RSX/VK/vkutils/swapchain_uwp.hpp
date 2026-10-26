@@ -20,6 +20,8 @@ namespace vk
 	void acquire_global_submit_lock();
 	void release_global_submit_lock();
 	extern atomic_t<u64> g_uwp_present_wait_us, g_uwp_present_copy_us; // VKCommandStream.cpp
+	// Off: the RSX thread copies each frame to the shell itself, as before (LocalState/sync_present_copy).
+	extern bool g_uwp_async_present_copy; // VKCommandStream.cpp
 
 	class swapchain_UWP : public native_swapchain_base
 	{
@@ -98,16 +100,25 @@ namespace vk
 			const u64 t1 = now_us();
 			finish_copy();
 			const void* pixels = swapchain_images[image].second->get_pixels();
-			if (!m_copier.joinable())
-				m_copier = std::thread([this] { copier_loop(); });
+			if (!g_uwp_async_present_copy)
 			{
-				std::lock_guard lock(m_copy_mutex);
-				m_copy_src = pixels;
-				m_copy_width = m_width;
-				m_copy_height = m_height;
+				uwp_present_frame(pixels, m_width, m_height);
+				swapchain_images[image].second->free_pixels();
+				swapchain_images[image].first = false;
 			}
-			m_copy_cv.notify_all();
-			m_copy_image = static_cast<s32>(image);
+			else
+			{
+				if (!m_copier.joinable())
+					m_copier = std::thread([this] { copier_loop(); });
+				{
+					std::lock_guard lock(m_copy_mutex);
+					m_copy_src = pixels;
+					m_copy_width = m_width;
+					m_copy_height = m_height;
+				}
+				m_copy_cv.notify_all();
+				m_copy_image = static_cast<s32>(image);
+			}
 			const u64 t2 = now_us();
 			m_wait_sum_us += t1 - t0;
 			m_copy_sum_us += t2 - t1;
@@ -191,7 +202,7 @@ namespace vk
 
 			const u64 now = now_us();
 			if (!m_last_present_us)
-				uwp_present_log.notice("First frame presented");
+				uwp_present_log.notice("First frame presented (frame copy on %s)", g_uwp_async_present_copy ? "its own thread" : "the RSX thread");
 			if (m_last_present_us)
 			{
 				const u64 interval = now - m_last_present_us;
