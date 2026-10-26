@@ -647,6 +647,33 @@ namespace uwp_xaml
 						}});
 					}).get(), &token);
 				}
+				const auto on_click = [&](const wchar_t* name, std::function<void()> fn)
+				{
+					if (const auto button = find_el<IButtonBase>(root, name))
+						button->add_Click(make_handler<routed_handler>([fn = std::move(fn)](IInspectable*, IRoutedEventArgs*) { fn(); }).get(), &token);
+				};
+				// The rest of RPCS3's home menu: lists open as screens over the pause menu (B goes back to it).
+				on_click(L"PauseTrophies", [this]() { screen_last = 0; uwp_frontend::open_trophies(); });
+				on_click(L"PauseFriends", [this]() { screen_last = 0; uwp_frontend::open_friends(); });
+				on_click(L"PauseLoadState", [this]() { screen_last = 0; uwp_frontend::open_load_state(); });
+				on_click(L"PauseScreenshot", [this]()
+				{
+					// Taken from the next frame the game draws, after the pause menu closes (it isn't in it).
+					uwp_frontend::take_screenshot();
+					close_pause();
+				});
+				on_click(L"PauseSaveState", [this]()
+				{
+					show_dialog({"Save state?", "Saves the whole game as it is now, to load it again later from this menu. The game restarts from the state right away. Save states don't work in every game; the game's own saves are safer.", "Save state", [this]()
+					{
+						pause_open = false;
+						set_visible(pause_layer, false);
+						uwp_frontend::screen_close();
+						update_gating();
+						pending_focus.reset();
+						uwp_frontend::save_state();
+					}});
+				});
 				if (const auto stop = find_el<IButtonBase>(root, L"PauseStop"))
 				{
 					stop->add_Click(make_handler<routed_handler>([this](IInspectable*, IRoutedEventArgs*)
@@ -734,7 +761,7 @@ namespace uwp_xaml
 			{
 				// Controls behind an overlay must not take the focus: disabled controls can't have it.
 				set_enabled(pivot_ctl, menu_visible && !dialog && !job_visible && !pause_open && !loading_shown && !error_shown && !screen_open && !text_open());
-				set_enabled(pause_scroll_ctl, !dialog);
+				set_enabled(pause_scroll_ctl, !dialog && !screen_open && !text_open());
 				set_enabled(screen_scroll_ctl, !dialog && !job_visible && !text_open());
 				const bool text_enabled = !dialog && !job_visible;
 				set_enabled(text_field_ctl, text_enabled);
@@ -749,6 +776,8 @@ namespace uwp_xaml
 					request_focus(text_field_ctl.as<IInspectable>());
 				else if (screen_open && !screen_buttons.empty())
 					request_focus(screen_buttons[std::min<usz>(screen_last, screen_buttons.size() - 1)]);
+				else if (pause_open)
+					request_focus(find_el<IInspectable>(root, L"PauseResume"));
 				else if (menu_visible)
 					focus_menu();
 			}
@@ -1174,10 +1203,10 @@ namespace uwp_xaml
 					show_next_dialog();
 					return;
 				}
-				if (pause_open)
-					request_focus(find_el<IInspectable>(root, L"PauseResume"));
-				else if (dialog_return_focus && (screen_open || text_open()))
+				if (dialog_return_focus && (screen_open || text_open()))
 					focus_top(); // the screen may have been rebuilt meanwhile
+				else if (pause_open)
+					request_focus(find_el<IInspectable>(root, L"PauseResume"));
 				else if (dialog_return_focus)
 					request_focus(dialog_return_focus);
 				else
@@ -1188,7 +1217,7 @@ namespace uwp_xaml
 			// ---- The menu logic's screen (RPCN account) ----
 			void sync_screen()
 			{
-				std::optional<uwp_frontend::screen_view> sv = menu_visible ? uwp_frontend::get_screen() : std::nullopt;
+				std::optional<uwp_frontend::screen_view> sv = menu_visible || pause_open ? uwp_frontend::get_screen() : std::nullopt;
 				const bool open = sv.has_value();
 				if (open != screen_open)
 				{
@@ -1254,7 +1283,7 @@ namespace uwp_xaml
 			// ---- Text field ----
 			void sync_text()
 			{
-				const std::optional<uwp_frontend::text_view> tv = menu_visible ? uwp_frontend::get_text_field() : std::nullopt;
+				const std::optional<uwp_frontend::text_view> tv = menu_visible || pause_open ? uwp_frontend::get_text_field() : std::nullopt;
 				const u64 serial = tv ? tv->serial : 0;
 				if (serial == text_serial)
 					return;
@@ -1342,6 +1371,9 @@ namespace uwp_xaml
 					return;
 				pause_open = true;
 				build_settings(pause_settings_panel, true, nullptr);
+				// Entries for what the game has.
+				set_visible(find_el<IUIElement>(root, L"PauseTrophies"), uwp_frontend::has_trophies());
+				set_visible(find_el<IUIElement>(root, L"PauseLoadState"), uwp_frontend::has_save_states());
 				set_visible(pause_layer, true);
 				update_gating();
 				uwp_frontend::set_paused(true);
@@ -1355,6 +1387,7 @@ namespace uwp_xaml
 					return;
 				pause_open = false;
 				set_visible(pause_layer, false);
+				uwp_frontend::screen_close(); // a trophies / friends / save state list over it
 				update_gating();
 				uwp_frontend::set_paused(false);
 				pending_focus.reset();
@@ -1366,6 +1399,7 @@ namespace uwp_xaml
 			{
 				pause_open = false;
 				set_visible(pause_layer, false);
+				uwp_frontend::screen_close(); // a trophies / friends / save state list over it
 				update_gating();
 				pending_focus.reset();
 				uwp_frontend::stop_game();
@@ -1376,6 +1410,7 @@ namespace uwp_xaml
 			{
 				pause_open = false;
 				set_visible(pause_layer, false);
+				uwp_frontend::screen_close(); // a trophies / friends / save state list over it
 				update_gating();
 				pending_focus.reset();
 				uwp_frontend::restart_game();

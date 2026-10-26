@@ -23,6 +23,11 @@
 #include "Emu/NP/rpcn_config.h"
 #include "Loader/ISO.h"
 #include "Loader/PSF.h"
+#include "Loader/TROPUSR.h"
+#include "Emu/VFS.h"
+#include "Emu/IdManager.h"
+#include "Emu/savestate_utils.hpp"
+#include "Emu/Cell/Modules/sceNpTrophy.h"
 #include "Crypto/unpkg.h"
 #include "Utilities/Thread.h"
 #include "Utilities/File.h"
@@ -46,6 +51,8 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+
+extern atomic_t<bool> g_user_asked_for_screenshot; // RSXThread.cpp
 
 // Firmware library list (Emu/Cell/PPUModule.cpp): true = HLE by default.
 extern const std::map<std::string_view, int> g_prx_list;
@@ -1393,6 +1400,256 @@ namespace uwp_frontend
 							if (rpcn_enabled())
 								set_rpcn_enabled(false);
 							refresh_rpcn_account();
+						});
+					}});
+				}
+				return items;
+			};
+			g_ui->menu = std::move(menu);
+			g_ui->dirty = true;
+		}
+
+		// ---- Pause menu pages: what RPCS3's home menu opened as overlays ----
+		std::string current_trophy_set()
+		{
+			auto* current = g_fxo->try_get<current_trophy_name>();
+			if (!current)
+				return {};
+			std::lock_guard lock(current->mtx);
+			return current->name;
+		}
+
+		struct trophy_row
+		{
+			std::string name, detail;
+			char grade = 'B';
+			bool earned = false;
+		};
+
+		// The running game's trophies (as overlay_trophy_list_dialog reads them).
+		bool load_trophies(const std::string& set, std::string& game, std::vector<trophy_row>& rows)
+		{
+			const std::string base = "/dev_hdd0/home/" + Emu.GetUsr() + "/trophy/" + set;
+			TROPUSRLoader usr;
+			if (!usr.Load(base + "/TROPUSR.DAT", base + "/TROPCONF.SFM").success)
+				return false;
+			fs::file config(vfs::get(base + "/TROPCONF.SFM"));
+			trophy_xml_document doc;
+			if (!config || !doc.Read(config.to_string()))
+				return false;
+			const std::shared_ptr<rXmlNode> root = doc.GetRoot();
+			for (std::shared_ptr<rXmlNode> n = root ? root->GetChildren() : nullptr; n; n = n->GetNext())
+			{
+				if (n->GetName() == "title-name")
+				{
+					game = n->GetNodeContent();
+					continue;
+				}
+				if (n->GetName() != "trophy")
+					continue;
+				trophy_row row;
+				const s32 id = atoi(n->GetAttribute("id").c_str());
+				row.earned = usr.GetTrophyUnlockState(id);
+				row.grade = n->GetAttribute("ttype").empty() ? 'B' : n->GetAttribute("ttype")[0];
+				const bool hidden = !n->GetAttribute("hidden").empty() && n->GetAttribute("hidden")[0] == 'y';
+				if (hidden && !row.earned)
+				{
+					row.name = "Hidden trophy";
+					row.detail = "Earn it to see what it is.";
+				}
+				else
+				{
+					for (std::shared_ptr<rXmlNode> c = n->GetChildren(); c; c = c->GetNext())
+					{
+						if (c->GetName() == "name")
+							row.name = c->GetNodeContent();
+						else if (c->GetName() == "detail")
+							row.detail = c->GetNodeContent();
+					}
+				}
+				rows.push_back(std::move(row));
+			}
+			return true;
+		}
+
+		void open_trophy_list()
+		{
+			const std::string set = current_trophy_set();
+			std::string game;
+			std::vector<trophy_row> rows;
+			if (set.empty() || !load_trophies(set, game, rows))
+			{
+				show_modal("Trophies", "This game's trophies couldn't be read (RPCS3.log has the details).");
+				return;
+			}
+			auto menu = std::make_unique<list_menu>();
+			menu->title = game.empty() ? std::string("Trophies") : "Trophies: " + game;
+			menu->header = [rows]()
+			{
+				u32 earned = 0;
+				std::map<char, std::pair<u32, u32>> by_grade;
+				for (const trophy_row& r : rows)
+				{
+					earned += r.earned;
+					by_grade[r.grade].first += r.earned;
+					by_grade[r.grade].second++;
+				}
+				std::string text = fmt::format("%u of %u earned", earned, rows.size());
+				for (const auto& [grade, name] : std::initializer_list<std::pair<char, const char*>>{{'P', "Platinum"}, {'G', "Gold"}, {'S', "Silver"}, {'B', "Bronze"}})
+				{
+					if (const auto it = by_grade.find(grade); it != by_grade.end())
+						text += fmt::format("   ·   %s %u/%u", name, it->second.first, it->second.second);
+				}
+				return text;
+			};
+			menu->build = [rows]()
+			{
+				std::vector<menu_item> items;
+				for (const trophy_row& r : rows)
+				{
+					const char* grade = r.grade == 'P' ? "Platinum" : r.grade == 'G' ? "Gold" : r.grade == 'S' ? "Silver" : "Bronze";
+					items.push_back({fmt::format("%s%s", r.earned ? "✓  " : "", r.name), fmt::format("%s · %s · %s", grade, r.earned ? "Earned" : "Not earned yet", r.detail), {}});
+				}
+				return items;
+			};
+			g_ui->menu = std::move(menu);
+			g_ui->dirty = true;
+		}
+
+		// RPCN friends, as RPCS3's friends overlay lists them; reloaded after each change.
+		uwp_rpcn::friends g_friends;
+		std::string g_friends_error;
+		bool g_friends_opening = false; // open_friends() ran: the first answer opens the screen
+
+		void show_friends_menu();
+
+		void reload_friends(std::string busy_text = "Loading the friends list...")
+		{
+			run_rpcn_job(std::move(busy_text), []() -> std::function<void()>
+			{
+				uwp_rpcn::friends list;
+				const uwp_rpcn::result res = uwp_rpcn::get_friends(list);
+				return [res, list = std::move(list)]()
+				{
+					g_friends = list;
+					g_friends_error = res.ok ? std::string() : res.message;
+					show_friends_menu();
+				};
+			});
+		}
+
+		void friend_action(std::string busy_text, std::function<uwp_rpcn::result()> call, std::string failed_title)
+		{
+			run_rpcn_job(std::move(busy_text), [call = std::move(call), failed_title = std::move(failed_title)]() -> std::function<void()>
+			{
+				const uwp_rpcn::result res = call();
+				return [res, failed_title]()
+				{
+					if (!res.ok)
+						show_modal(failed_title, res.message);
+					reload_friends();
+				};
+			});
+		}
+
+		void show_friends_menu()
+		{
+			// Only while the friends screen is up (or opening): a late answer doesn't open it again.
+			if (g_ui->menu ? g_ui->menu->title != "Friends" : !g_friends_opening)
+				return;
+			g_friends_opening = false;
+			auto menu = std::make_unique<list_menu>();
+			menu->title = "Friends";
+			menu->header = []()
+			{
+				if (!g_friends_error.empty())
+					return g_friends_error;
+				u32 online = 0;
+				for (const auto& f : g_friends.list)
+					online += f.online;
+				return fmt::format("%u friends, %u online. %u requests to answer, %u sent.", g_friends.list.size(), online, g_friends.requests_received.size(), g_friends.requests_sent.size());
+			};
+			menu->build = []()
+			{
+				std::vector<menu_item> items;
+				items.push_back({"Add a friend", "Sends a friend request to an RPCN user.", []()
+				{
+					ask_text(text_entry::kind::username, "Add a friend", "The friend's RPCN username.", {}, [](std::string name)
+					{
+						if (!uwp_rpcn::valid_username(name))
+						{
+							show_modal("Invalid username", "A username has 3 to 16 characters: letters, digits, - and _.");
+							return;
+						}
+						friend_action("Sending the request...", [name]() { return uwp_rpcn::add_friend(name); }, "Friend request not sent");
+					});
+				}});
+				items.push_back({"Refresh", "Loads the list again from the server.", []() { reload_friends(); }});
+				for (const std::string& name : g_friends.requests_received)
+				{
+					items.push_back({name, "Wants to be your friend: A to accept", [name]()
+					{
+						show_modal("Friend request", fmt::format("Accept %s as a friend?", name), "Accept", [name]()
+						{
+							friend_action("Accepting...", [name]() { return uwp_rpcn::add_friend(name); }, "Couldn't accept the request");
+						});
+					}});
+					items.push_back({"Reject " + name, "Rejects the friend request.", [name]()
+					{
+						show_modal("Friend request", fmt::format("Reject %s's request?", name), "Reject", [name]()
+						{
+							friend_action("Rejecting...", [name]() { return uwp_rpcn::remove_friend(name); }, "Couldn't reject the request");
+						});
+					}});
+				}
+				for (const auto& f : g_friends.list)
+				{
+					const std::string status = !f.online ? "Offline" : f.playing.empty() ? "Online" : "Online, playing " + f.playing;
+					items.push_back({f.name, status + ". A to remove.", [name = f.name]()
+					{
+						show_modal("Remove friend", fmt::format("Remove %s from your friends?", name), "Remove", [name]()
+						{
+							friend_action("Removing...", [name]() { return uwp_rpcn::remove_friend(name); }, "Couldn't remove the friend");
+						});
+					}});
+				}
+				for (const std::string& name : g_friends.requests_sent)
+				{
+					items.push_back({name, "Request sent, not answered yet. A to cancel it.", [name]()
+					{
+						show_modal("Friend request", fmt::format("Cancel your request to %s?", name), "Cancel request", [name]()
+						{
+							friend_action("Cancelling...", [name]() { return uwp_rpcn::remove_friend(name); }, "Couldn't cancel the request");
+						});
+					}});
+				}
+				for (const std::string& name : g_friends.blocked)
+					items.push_back({name, "Blocked.", {}});
+				return items;
+			};
+			g_ui->menu = std::move(menu);
+			g_ui->dirty = true;
+		}
+
+		void open_load_state_menu()
+		{
+			auto menu = std::make_unique<list_menu>();
+			menu->title = "Load a save state";
+			menu->header = []() { return std::string("The game starts again from where the state was saved. Progress since then is lost."); };
+			menu->build = []()
+			{
+				std::vector<menu_item> items;
+				for (u32 i = 1; i <= 4 && boot_current_game_savestate(true, i); i++)
+				{
+					items.push_back({i == 1 ? std::string("Newest save state") : fmt::format("Save state %u (older)", i), "A to load it.", [i]()
+					{
+						if (g_ui)
+							g_ui->menu.reset();
+						g_paused_by_menu = false;
+						g_host.run_on_main([i]()
+						{
+							ui_log.notice("UI: loading save state %u from the pause menu", i);
+							boot_current_game_savestate(false, i);
 						});
 					}});
 				}
@@ -3055,6 +3312,63 @@ namespace uwp_frontend
 			ui_log.notice("UI: stopping the game from the pause menu");
 			Emu.GracefulShutdown(false, true);
 		});
+	}
+
+	bool has_trophies()
+	{
+		return !current_trophy_set().empty();
+	}
+
+	void open_trophies()
+	{
+		if (g_ui && g_in_game)
+			open_trophy_list();
+	}
+
+	void open_friends()
+	{
+		if (!g_ui || !g_in_game)
+			return;
+		g_ui->menu.reset();
+		g_friends = {};
+		g_friends_error = "Loading...";
+		g_friends_opening = true;
+		show_friends_menu();
+		reload_friends();
+	}
+
+	void save_state()
+	{
+		g_host.run_on_main([]()
+		{
+			g_paused_by_menu = false;
+			const bool suspend = g_cfg.savestate.suspend_emu.get();
+			ui_log.notice("UI: save state from the pause menu (%s)", suspend ? "and quit" : "and go on");
+			// As RPCS3's home menu does it: save, then boot the state again and go on playing.
+			if (!suspend)
+			{
+				Emu.after_kill_callback = []() { Emu.Restart(true, false); };
+				Emu.SetContinuousMode(true);
+			}
+			Emu.Kill(false, true);
+		});
+	}
+
+	bool has_save_states()
+	{
+		return boot_current_game_savestate(true, 1);
+	}
+
+	void open_load_state()
+	{
+		if (g_ui && g_in_game)
+			open_load_state_menu();
+	}
+
+	void take_screenshot()
+	{
+		ui_log.notice("UI: screenshot from the pause menu");
+		g_user_asked_for_screenshot = true;
 	}
 
 	void restart_game()

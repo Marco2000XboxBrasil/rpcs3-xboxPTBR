@@ -149,7 +149,54 @@
     </Grid>
   </Grid>
 
-  <!-- A screen of the menu logic: a list of actions under a status text (Settings > RPCN account). -->
+  <!-- Boot / compile progress, over a dark backdrop (over the game picture while it compiles). -->
+  <Grid x:Name="LoadingLayer" Visibility="Collapsed">
+    <Rectangle x:Name="LoadingBackdrop" Fill="#FF202020"/>
+    <StackPanel VerticalAlignment="Center" Margin="48,0,48,0">
+      <TextBlock x:Name="LoadingTitle" FontSize="22" FontWeight="SemiBold"/>
+      <ProgressBar x:Name="LoadingBar" Maximum="100" Margin="0,18,0,18"/>
+      <TextBlock x:Name="LoadingDetail" FontSize="14" Opacity="0.7" TextWrapping="Wrap"/>
+    </StackPanel>
+  </Grid>
+
+  <!-- Firmware / package install progress. -->
+  <Grid x:Name="JobLayer" Visibility="Collapsed">
+    <Rectangle Fill="#99000000"/>
+    <Border Background="#FF2B2B2B" BorderBrush="#FF3A3A3A" BorderThickness="1" CornerRadius="8"
+            HorizontalAlignment="Center" VerticalAlignment="Center" Padding="24" Width="560">
+      <StackPanel>
+        <TextBlock x:Name="JobTitle" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap"/>
+        <ProgressBar x:Name="JobBar" Maximum="100" Margin="0,18,0,12"/>
+        <TextBlock x:Name="JobDetail" FontSize="14" Opacity="0.7"/>
+      </StackPanel>
+    </Border>
+  </Grid>
+
+  <!-- In-game pause menu (View + Menu, the PS button). -->
+  <Grid x:Name="PauseLayer" Visibility="Collapsed">
+    <Rectangle Fill="#99000000"/>
+    <Border Background="#FF2B2B2B" BorderBrush="#FF3A3A3A" BorderThickness="1" CornerRadius="8"
+            HorizontalAlignment="Center" VerticalAlignment="Center" Padding="24" Width="560">
+      <ScrollViewer x:Name="PauseScroll" MaxHeight="460" VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+          <TextBlock FontSize="22" FontWeight="SemiBold" Margin="0,0,0,14">Paused</TextBlock>
+          <Button x:Name="PauseResume" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Resume game" Margin="0,0,0,8"/>
+          <Button x:Name="PauseRestart" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Restart game" Margin="0,0,0,8"/>
+          <Button x:Name="PauseTrophies" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Trophies" Margin="0,0,0,8"/>
+          <Button x:Name="PauseFriends" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Friends (RPCN)" Margin="0,0,0,8"/>
+          <Button x:Name="PauseScreenshot" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Take a screenshot" Margin="0,0,0,8"/>
+          <Button x:Name="PauseSaveState" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Save state" Margin="0,0,0,8"/>
+          <Button x:Name="PauseLoadState" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Load a save state" Margin="0,0,0,8"/>
+          <Button x:Name="PauseStop" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Stop game and return to the menu" Margin="0,0,0,16"/>
+          <TextBlock FontSize="14" Opacity="0.6" TextWrapping="Wrap" Margin="0,0,0,6">The running game's settings, as in RPCS3's own menu. They apply right away and are kept for later games. The rest are on the Settings tab of the app menu.</TextBlock>
+          <StackPanel x:Name="PauseSettingsStack"/>
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+  </Grid>
+
+  <!-- A screen of the menu logic: a list of actions under a status text (Settings > RPCN account, and
+       the pause menu's trophies, friends and save states, so declared after the pause menu). -->
   <Grid x:Name="ScreenLayer" Visibility="Collapsed">
     <Grid.Background>
       <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
@@ -196,47 +243,6 @@
           <Button x:Name="TextCancel" Grid.Column="1" HorizontalAlignment="Stretch" Margin="4,0,0,0" Content="Cancel"/>
         </Grid>
       </StackPanel>
-    </Border>
-  </Grid>
-
-  <!-- Boot / compile progress, over a dark backdrop (over the game picture while it compiles). -->
-  <Grid x:Name="LoadingLayer" Visibility="Collapsed">
-    <Rectangle x:Name="LoadingBackdrop" Fill="#FF202020"/>
-    <StackPanel VerticalAlignment="Center" Margin="48,0,48,0">
-      <TextBlock x:Name="LoadingTitle" FontSize="22" FontWeight="SemiBold"/>
-      <ProgressBar x:Name="LoadingBar" Maximum="100" Margin="0,18,0,18"/>
-      <TextBlock x:Name="LoadingDetail" FontSize="14" Opacity="0.7" TextWrapping="Wrap"/>
-    </StackPanel>
-  </Grid>
-
-  <!-- Firmware / package install progress. -->
-  <Grid x:Name="JobLayer" Visibility="Collapsed">
-    <Rectangle Fill="#99000000"/>
-    <Border Background="#FF2B2B2B" BorderBrush="#FF3A3A3A" BorderThickness="1" CornerRadius="8"
-            HorizontalAlignment="Center" VerticalAlignment="Center" Padding="24" Width="560">
-      <StackPanel>
-        <TextBlock x:Name="JobTitle" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap"/>
-        <ProgressBar x:Name="JobBar" Maximum="100" Margin="0,18,0,12"/>
-        <TextBlock x:Name="JobDetail" FontSize="14" Opacity="0.7"/>
-      </StackPanel>
-    </Border>
-  </Grid>
-
-  <!-- In-game pause menu (View + Menu, the PS button). -->
-  <Grid x:Name="PauseLayer" Visibility="Collapsed">
-    <Rectangle Fill="#99000000"/>
-    <Border Background="#FF2B2B2B" BorderBrush="#FF3A3A3A" BorderThickness="1" CornerRadius="8"
-            HorizontalAlignment="Center" VerticalAlignment="Center" Padding="24" Width="560">
-      <ScrollViewer x:Name="PauseScroll" MaxHeight="460" VerticalScrollBarVisibility="Auto">
-        <StackPanel>
-          <TextBlock FontSize="22" FontWeight="SemiBold" Margin="0,0,0,14">Paused</TextBlock>
-          <Button x:Name="PauseResume" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Resume game" Margin="0,0,0,8"/>
-          <Button x:Name="PauseRestart" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Restart game" Margin="0,0,0,8"/>
-          <Button x:Name="PauseStop" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="Stop game and return to the menu" Margin="0,0,0,16"/>
-          <TextBlock FontSize="14" Opacity="0.6" TextWrapping="Wrap" Margin="0,0,0,6">The running game's settings, as in RPCS3's own menu. They apply right away and are kept for later games. The rest are on the Settings tab of the app menu.</TextBlock>
-          <StackPanel x:Name="PauseSettingsStack"/>
-        </StackPanel>
-      </ScrollViewer>
     </Border>
   </Grid>
 

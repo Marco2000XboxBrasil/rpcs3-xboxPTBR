@@ -87,6 +87,9 @@ namespace rpcs3::utils
 
 	std::string get_data_dir();
 	std::string get_icons_dir();
+#ifdef RPCS3_UWP
+	extern std::string g_uwp_savestates_dir;
+#endif
 	std::string get_savestates_dir();
 	std::string get_captures_dir();
 	std::string get_recordings_dir();

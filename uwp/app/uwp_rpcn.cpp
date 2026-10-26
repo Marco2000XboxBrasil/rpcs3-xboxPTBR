@@ -298,4 +298,77 @@ namespace uwp_rpcn
 		rpcn_ui_log.success("Changed the password of RPCN account %s", npid);
 		return {true, {}};
 	}
+
+	namespace
+	{
+		std::shared_ptr<rpcn::rpcn_client> login(result& res)
+		{
+			const account acc = get_account();
+			if (acc.npid.empty() || !acc.has_password)
+			{
+				res = {false, "No RPCN account is set up on this console. Set one up in Settings > RPCN account."};
+				return nullptr;
+			}
+			const auto rpcn = connect(res);
+			if (!rpcn)
+				return nullptr;
+			if (const auto state = rpcn->wait_for_authentified(); state != rpcn::rpcn_state::failure_no_failure)
+			{
+				rpcn_ui_log.error("Logging in as %s failed: %s", acc.npid, rpcn::rpcn_state_to_string(state));
+				res = {false, state_text(state)};
+				return nullptr;
+			}
+			return rpcn;
+		}
+	}
+
+	result get_friends(friends& out)
+	{
+		out = {};
+		result res;
+		const auto rpcn = login(res);
+		if (!rpcn)
+			return res;
+
+		rpcn::friend_data data;
+		rpcn->get_friends(data);
+		for (const auto& [name, f] : data.friends)
+			out.list.push_back({name, f.online, f.online ? f.pr_title : std::string()});
+		std::stable_partition(out.list.begin(), out.list.end(), [](const friend_entry& f) { return f.online; });
+		out.requests_received.assign(data.requests_received.begin(), data.requests_received.end());
+		out.requests_sent.assign(data.requests_sent.begin(), data.requests_sent.end());
+		out.blocked.assign(data.blocked.begin(), data.blocked.end());
+		return {true, {}};
+	}
+
+	result add_friend(std::string_view npid)
+	{
+		result res;
+		const auto rpcn = login(res);
+		if (!rpcn)
+			return res;
+
+		const std::optional<rpcn::ErrorType> error = rpcn->add_friend(npid);
+		if (!error)
+			return {false, "The RPCN server didn't answer."};
+		switch (*error)
+		{
+		case rpcn::ErrorType::NoError: rpcn_ui_log.success("Friend request to %s", npid); return {true, {}};
+		case rpcn::ErrorType::NotFound: return {false, fmt::format("There is no RPCN user named %s.", npid)};
+		case rpcn::ErrorType::AlreadyFriend: return {false, fmt::format("%s is already a friend or has a request from you.", npid)};
+		default: return {false, fmt::format("The server refused it (%s).", *error)};
+		}
+	}
+
+	result remove_friend(std::string_view npid)
+	{
+		result res;
+		const auto rpcn = login(res);
+		if (!rpcn)
+			return res;
+		if (!rpcn->remove_friend(npid))
+			return {false, fmt::format("The server didn't remove %s.", npid)};
+		rpcn_ui_log.success("Removed %s from the friends", npid);
+		return {true, {}};
+	}
 }

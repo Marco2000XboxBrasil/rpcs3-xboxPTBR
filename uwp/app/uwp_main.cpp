@@ -53,6 +53,12 @@
 #include "util/logs.hpp"
 #include "util/sysinfo.hpp"
 #include "util/video_source.h"
+#include "Utilities/date_time.h"
+#include "Emu/RSX/Overlays/overlay_message.h"
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_STATIC
+#include <stb_image_write.h>
 
 #include <chrono>
 #include <cstdio>
@@ -60,6 +66,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <thread>
 #include <vector>
 #include <unordered_map>
 #include <d3d11_1.h>
@@ -122,6 +129,8 @@ namespace
 	u32 g_frame_width = 0, g_frame_height = 0;
 	u64 g_frame_serial = 0;
 
+	void save_screenshot(std::vector<u8> data, u32 width, u32 height, bool is_bgra);
+
 	// Stand-in for the desktop game window: fixed size, no native handle. The Vulkan
 	// renderer presents through swapchain_UWP, which calls uwp_present_frame().
 	class uwp_gs_frame final : public GSFrameBase
@@ -147,7 +156,10 @@ namespace
 
 		bool can_consume_frame() const override { return false; }
 		void present_frame(std::vector<u8>&&, u32, u32, u32, bool) const override {}
-		void take_screenshot(std::vector<u8>&&, u32, u32, bool) override {}
+		void take_screenshot(std::vector<u8>&& data, u32 width, u32 height, bool is_bgra) override
+		{
+			std::thread([data = std::move(data), width, height, is_bgra]() mutable { save_screenshot(std::move(data), width, height, is_bgra); }).detach();
+		}
 
 		void update_title(double) override {}
 	};
@@ -182,6 +194,35 @@ namespace
 	}
 	std::string g_local_dir; // LocalState, with trailing slash
 	std::string g_storage_root; // folder on the big drive chosen by choose_cache_dir ("E:/RPCS3/"), empty = LocalState
+
+	// The pause menu's Screenshot: a PNG next to the caches on the big drive (E:/RPCS3/screenshots/<title id>/),
+	// where a PC can read it, or in LocalState without one. Called on a thread of its own.
+	void save_screenshot(std::vector<u8> data, u32 width, u32 height, bool is_bgra)
+	{
+		if (data.size() < usz{width} * height * 4)
+			return;
+		u32* px = reinterpret_cast<u32*>(data.data());
+		for (usz i = 0, n = usz{width} * height; i < n; i++)
+			px[i] = (is_bgra ? ((px[i] & 0xFF) << 16) | (px[i] & 0xFF00) | ((px[i] >> 16) & 0xFF) : px[i]) | 0xFF000000;
+
+		const std::string id = Emu.GetTitleID();
+		const std::string dir = (g_storage_root.empty() ? g_local_dir : g_storage_root) + "screenshots/" + (id.empty() ? std::string() : id + "/");
+		const std::string path = dir + (id.empty() ? "" : id + "_") + date_time::current_time_narrow<'_'>() + ".png";
+		std::vector<u8> png;
+		const bool encoded = fs::create_path(dir) && stbi_write_png_to_func([](void* ctx, void* bytes, int size)
+		{
+			auto& out = *static_cast<std::vector<u8>*>(ctx);
+			out.insert(out.end(), static_cast<u8*>(bytes), static_cast<u8*>(bytes) + size);
+		}, &png, static_cast<int>(width), static_cast<int>(height), 4, data.data(), static_cast<int>(width * 4));
+		if (!encoded || !fs::write_file(path, fs::rewrite, png))
+		{
+			sys_log.error("UWP: could not save the screenshot to %s (%s)", path, fs::g_tls_error);
+			rsx::overlays::queue_message(std::string("Couldn't save the screenshot"));
+			return;
+		}
+		sys_log.success("UWP: screenshot saved to %s (%ux%u, %u KB)", path, width, height, png.size() >> 10);
+		rsx::overlays::queue_message(std::string("Screenshot saved to " + path));
+	}
 
 	// The app's own storage on the Xbox (LocalState, drive Q:) has only a few MB free, far too
 	// little for the PPU/SPU/shader caches (hundreds of MB for the XMB alone). Put the cache on
@@ -232,6 +273,7 @@ namespace
 		fs::remove_file(dir + "write_test");
 		g_android_cache_dir = dir;
 		g_storage_root = choice;
+		rpcs3::utils::g_uwp_savestates_dir = choice + "savestates/";
 
 		// The old cache in LocalState only takes the space the rest of the app needs.
 		if (fs::is_dir(local_cache))

@@ -7,6 +7,7 @@
 #include "Utilities/StrFmt.h"
 #include "system_config.h"
 #include "savestate_utils.hpp"
+#include "system_utils.hpp"
 
 #include "System.h"
 
@@ -295,12 +296,12 @@ std::string get_savestate_file(std::string_view title_id, std::string_view boot_
 	if (aggregate_file_size == umax && rel_id == -1)
 	{
 		// Return directory
-		return fs::get_config_dir() + "savestates/" + title + "/";
+		return rpcs3::utils::get_savestates_dir() + title + "/";
 	}
 
 	if (rel_id >= 0)
 	{
-		std::string dir_path = fs::get_config_dir() + "savestates/" + title + "/";
+		std::string dir_path = rpcs3::utils::get_savestates_dir() + title + "/";
 
 		fs::dir dir_view{dir_path};
 
@@ -432,7 +433,7 @@ std::string get_savestate_file(std::string_view title_id, std::string_view boot_
 	// While not needing to keep a 59 chars long suffix at all times for this purpose
 	const char prefix = ::at32("0123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"sv, save_id.size());
 
-	std::string path = fs::get_config_dir() + "/savestates/" + title + "/" + title + '_' + prefix + '_' + save_id + ".SAVESTAT";
+	std::string path = rpcs3::utils::get_savestates_dir() + title + "/" + title + '_' + prefix + '_' + save_id + ".SAVESTAT";
 
 	if (std::string path_compressed = path + ".zst"; fs::is_file(path_compressed))
 	{

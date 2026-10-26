@@ -359,8 +359,18 @@ namespace rpcs3::utils
 		return fs::get_config_dir() + "Icons/game_icons/";
 	}
 
+#ifdef RPCS3_UWP
+	// Save states are hundreds of MB: the UWP app puts them on the big drive next to its caches
+	// ("E:/RPCS3/savestates/"), since LocalState has only a few MB free. Empty: the config folder.
+	std::string g_uwp_savestates_dir;
+#endif
+
 	std::string get_savestates_dir()
 	{
+#ifdef RPCS3_UWP
+		if (!g_uwp_savestates_dir.empty())
+			return g_uwp_savestates_dir;
+#endif
 		return fs::get_config_dir() + "savestates/";
 	}
 
