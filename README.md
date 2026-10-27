@@ -17,23 +17,40 @@ known issues are in [uwp/README.md](uwp/README.md).
 
 ## What works (October 2026)
 
-Based on the developer's own tests and the opt-in telemetry from players' consoles (October 24–25).
-Speeds are averages on Series X and S; the first start of a game is always slower (see below).
+Based on the developer's own tests and the opt-in telemetry from players' consoles (October 24–27,
+official builds 0.1.34.73 to 0.1.35.7). Speeds are typical averages on Series X and S; the first
+start of a game is always slower (see below).
+
+Many games below can stop with "Out of host memory". That is not real memory pressure: the Xbox's
+graphics driver rejects one frame. It is the main crash left, it affects the whole port, and it is
+being worked on.
 
 | Game | State |
 | --- | --- |
-| PS3 system menu (XMB, firmware 4.93) | Steady 60 fps, network and web browser work |
-| Portal 2 | Playable, ~28 fps (limited by the emulated PPU main thread); short stutters |
-| Minecraft PlayStation 3 Edition | Playable, 50–57 fps with small stutters (pick "Continue playing offline" at the PSN prompt) |
-| Jetpack Joyride Deluxe | Playable, 60 fps |
-| GTA V | In-game, ~25 fps (limited by the emulated SPUs) |
-| X-Men Origins: Wolverine | In-game, 22–24 fps; can crash after about 30 minutes when memory runs out |
-| PlayStation Home | Works, ~20 fps; sometimes crashes in the main plaza or right after the RPCN sign-in |
-| 50 Cent: Blood on the Sand, SAW II | In-game, but can crash mid-game (the GPU device is lost) |
-| LittleBigPlanet | Boots; slow on the first start, crashes after a few minutes in game |
-| Mortal Kombat vs. DC Universe | Crashes about 10 minutes in, every time |
-| 007 Legends | Boots, intro scene around 40 to 55 fps |
-| Watch Dogs, Plants vs. Zombies Garden Warfare | Boot, but not playable (single-digit fps or crashes) |
+| PS3 system menu (XMB, firmware 4.93) | Works, 60 fps; network and web browser work |
+| Minecraft PlayStation 3 Edition | Playable, 50–57 fps with small stutters (pick "Continue playing offline" at the PSN prompt); sessions up to 37 min |
+| Minecraft: Story Mode | Playable, 30 fps (the game's own cap); sessions over 2 hours |
+| DRIVER San Francisco | Playable, ~59 fps |
+| Jetpack Joyride Deluxe | Playable, ~58 fps |
+| Marvel vs. Capcom 2 | Playable, 60 fps (from 0.1.35.5 on) |
+| Portal 2 | Playable, ~26 fps (limited by the emulated PPU main thread); short stutters |
+| X-Men Origins: Wolverine | Playable, 22–24 fps; can crash after about 30 minutes |
+| WipEout HD Fury | In-game, ~45 fps with shader-compile stutters |
+| Naughty Bear Gold Edition | In-game, 45–56 fps (limited by the emulated SPUs) |
+| Dragon Ball: Raging Blast 2 | In-game, full speed |
+| GTA V | In-game, ~22 fps (limited by the emulated SPUs); drops while new SPU code compiles |
+| PlayStation Home | In-game, 20–30 fps; sometimes crashes in the main plaza |
+| inFamous | In-game, 10–30 fps (GPU-bound) |
+| LittleBigPlanet | In-game, ~20 fps; freezes and crashes after a few minutes |
+| 50 Cent: Blood on the Sand, SAW II | In-game, but crash often |
+| BLEACH: Soul Resurreccion | In-game, ~35 fps; crashes after a few minutes |
+| Mortal Kombat vs. DC Universe (PSN), Mortal Kombat Komplete Edition, Injustice: Gods Among Us | In-game, but crash within 1–2 minutes |
+| Resistance 2 | In-game, ~20 fps; crashes after about a minute |
+| 007 Legends | Boots, intro scene around 40–55 fps |
+| Plants vs. Zombies Garden Warfare, Watch Dogs | In-game briefly, not playable |
+| L.A. Noire | Menus and intro only, crashes within a minute |
+| Formula One Championship Edition, Mortal Kombat vs. DC Universe (disc) | Boot, crash before gameplay |
+| FIFA Street | Doesn't boot (the game exits at once) |
 
 Tried a game that isn't listed? Compatibility reports are welcome (see [Contributing](#contributing)).
 
