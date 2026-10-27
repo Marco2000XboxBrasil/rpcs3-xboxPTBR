@@ -5,6 +5,7 @@
 
 void dzn_trace_note(const void *list, const char *method);
 void dzn_trace_dump(const void *list, unsigned last);
+static void dzn_trace_dump_copies(const void *list);
 
 /* 4096 was too short: MK Komplete's failing list had more calls than that since its Reset. */
 #define DZN_TRACE_RING 65536
@@ -46,6 +47,7 @@ dzn_trace_dump(const void *list, unsigned last)
          continue;
       mesa_loge("dzn:   #%u %s", n - 1, e->method);
    }
+   dzn_trace_dump_copies(list);
 }
 
 /* ---- Scratch-list probing ----------------------------------------------------------------
@@ -198,4 +200,77 @@ dzn_probe_detail_RSSetScissorRects(UINT n, const D3D12_RECT *r)
 {
    for (UINT i = 0; i < n; i++)
       mesa_loge("dzn:   scissor %u: %ld,%ld - %ld,%ld", i, r[i].left, r[i].top, r[i].right, r[i].bottom);
+}
+
+/* ---- Last copies --------------------------------------------------------------------------
+ * Always on (no DZN_PROBE needed): the arguments of the last copies are kept, and the ones on a
+ * command list that fails to close are printed with their resources, since a copy is usually
+ * among its last calls (L.A. Noire, the resolution-scale change). */
+#define DZN_COPY_RING 64
+
+struct dzn_trace_copy {
+   const void *list;
+   int buffer;
+   D3D12_TEXTURE_COPY_LOCATION dst, src;
+   UINT x, y, z;
+   int has_box;
+   D3D12_BOX box;
+   UINT64 dst_off, src_off, size;
+};
+static struct dzn_trace_copy dzn_copy_ring[DZN_COPY_RING];
+static uint32_t dzn_copy_pos;
+
+void
+dzn_trace_copy_tex(const void *list, const D3D12_TEXTURE_COPY_LOCATION *dst, UINT x, UINT y, UINT z,
+                   const D3D12_TEXTURE_COPY_LOCATION *src, const D3D12_BOX *box)
+{
+   struct dzn_trace_copy *c = &dzn_copy_ring[__atomic_fetch_add(&dzn_copy_pos, 1, __ATOMIC_RELAXED) % DZN_COPY_RING];
+   c->list = NULL;
+   c->buffer = 0;
+   c->dst = *dst;
+   c->src = *src;
+   c->x = x; c->y = y; c->z = z;
+   c->has_box = box != NULL;
+   if (box)
+      c->box = *box;
+   __atomic_store_n(&c->list, list, __ATOMIC_RELEASE);
+}
+
+void
+dzn_trace_copy_buf(const void *list, ID3D12Resource *dst, UINT64 dst_off, ID3D12Resource *src, UINT64 src_off, UINT64 size)
+{
+   struct dzn_trace_copy *c = &dzn_copy_ring[__atomic_fetch_add(&dzn_copy_pos, 1, __ATOMIC_RELAXED) % DZN_COPY_RING];
+   c->list = NULL;
+   c->buffer = 1;
+   c->dst.pResource = dst;
+   c->src.pResource = src;
+   c->dst_off = dst_off; c->src_off = src_off; c->size = size;
+   __atomic_store_n(&c->list, list, __ATOMIC_RELEASE);
+}
+
+static void
+dzn_trace_dump_copies(const void *list)
+{
+   uint32_t end = __atomic_load_n(&dzn_copy_pos, __ATOMIC_RELAXED);
+   uint32_t begin = end > DZN_COPY_RING ? end - DZN_COPY_RING : 0;
+   unsigned shown = 0;
+   for (uint32_t i = end; i-- > begin && shown < 8;) {
+      const struct dzn_trace_copy *c = &dzn_copy_ring[i % DZN_COPY_RING];
+      if (__atomic_load_n(&c->list, __ATOMIC_ACQUIRE) != list)
+         continue;
+      shown++;
+      if (c->buffer) {
+         D3D12_RESOURCE_DESC dd, sd;
+         c->dst.pResource->lpVtbl->GetDesc(c->dst.pResource, &dd);
+         c->src.pResource->lpVtbl->GetDesc(c->src.pResource, &sd);
+         mesa_loge("dzn: copy (newest first) %u: buffer %llu bytes, dst %p+%llu of %llu, src %p+%llu of %llu", shown,
+                   (unsigned long long)c->size, (void *)c->dst.pResource, (unsigned long long)c->dst_off, (unsigned long long)dd.Width,
+                   (void *)c->src.pResource, (unsigned long long)c->src_off, (unsigned long long)sd.Width);
+      } else {
+         mesa_loge("dzn: copy (newest first) %u: texture", shown);
+         dzn_probe_detail_CopyTextureRegion(&c->dst, c->x, c->y, c->z, &c->src, c->has_box ? &c->box : NULL);
+      }
+   }
+   if (!shown)
+      mesa_loge("dzn: no copies recorded on this command list among the last %u copies", DZN_COPY_RING);
 }
