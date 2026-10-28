@@ -1051,9 +1051,21 @@ namespace uwp_frontend
 				std::deque<package_reader> readers;
 				readers.emplace_back(path);
 
+				// A full drive is a fatal file::write error in the installer thread, which closes the
+				// app; check the space first. The installed files take about as much as the package.
+				fs::stat_t pkg{};
+				fs::device_stat hdd{};
+				const bool known_free = fs::get_stat(path, pkg) && fs::statfs(rpcs3::utils::get_hdd0_dir(), hdd);
+				const u64 pkg_size = pkg.size;
+
 				if (!readers[0].is_valid())
 				{
 					error = "The package is damaged or not a PS3 package.";
+				}
+				else if (known_free && hdd.avail_free < pkg_size + (64u << 20))
+				{
+					error = fmt::format("The USB drive is full: the package needs about %u MB, but only %u MB are free. Free some space and try again.",
+						(pkg_size >> 20) + 64, hdd.avail_free >> 20);
 				}
 				else
 				{
