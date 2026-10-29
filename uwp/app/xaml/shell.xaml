@@ -1,15 +1,15 @@
-<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+<Grid xmlns="http://microsoft.com"
+      xmlns:x="http://microsoft.com"
       x:Name="Root" Background="#FF202020" RequestedTheme="Dark">
 
-  <!-- Windows 11 (Fluent) look: the WinUI 2 control styles come from the app resources
-       (uwp_xaml.cpp); colours here follow the Windows 11 dark palette: #202020 base with a
-       Mica-like tint, #2B2B2B cards with 8 px corners, #1C1C1C dialog footers. -->
+  <!-- Aparência do Windows 11 (Fluent): os estilos de controle do WinUI 2 vêm dos recursos do aplicativo
+       (uwp_xaml.cpp); as cores aqui seguem a paleta escura do Windows 11: base #202020 com um
+       tom estilo Mica, cartões #2B2B2B com cantos de 8 px, rodapés de diálogo #1C1C1C. -->
 
-  <!-- Game picture: the emulator's frames are presented into this panel's swap chain. -->
+  <!-- Imagem do jogo: os quadros do emulador são apresentados na cadeia de troca (swap chain) deste painel. -->
   <SwapChainPanel x:Name="GamePanel" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
 
-  <!-- The app menu, shown whenever no game runs. -->
+  <!-- O menu do aplicativo, exibido sempre que nenhum jogo estiver em execução. -->
   <Grid x:Name="MenuLayer">
     <Grid.Background>
       <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
@@ -28,28 +28,28 @@
       <Grid Grid.Row="0">
         <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
           <TextBlock FontSize="28" FontWeight="SemiBold">RPCS3</TextBlock>
-          <TextBlock FontSize="15" Opacity="0.7" Margin="10,0,0,5" VerticalAlignment="Bottom">for Xbox</TextBlock>
+          <TextBlock FontSize="15" Opacity="0.7" Margin="10,0,0,5" VerticalAlignment="Bottom">para Xbox</TextBlock>
           <Border Background="{ThemeResource SystemControlBackgroundAccentBrush}" CornerRadius="4" Padding="7,1,7,2"
                   Margin="10,0,0,5" VerticalAlignment="Bottom">
             <TextBlock FontSize="12" FontWeight="SemiBold" Foreground="White">Beta</TextBlock>
           </Border>
         </StackPanel>
-        <!-- The port author's logo (white on transparent, uwp/package/Assets/AuthorLogo.png) and site,
-             above the firmware text. -->
+        <!-- O logotipo do autor do port (branco no transparente, uwp/package/Assets/AuthorLogo.png) e site,
+             acima do texto do firmware. -->
         <StackPanel HorizontalAlignment="Right" VerticalAlignment="Bottom">
           <StackPanel HorizontalAlignment="Right" Margin="0,0,0,4">
             <Image Source="ms-appx:///Assets/AuthorLogo.png" Height="20" Width="20" Stretch="Uniform" HorizontalAlignment="Center"/>
             <TextBlock FontSize="7" Opacity="0.55" Margin="0,1,0,0" HorizontalAlignment="Center">emelinhabibovic.de</TextBlock>
           </StackPanel>
-          <!-- The anonymous telemetry ID (uwp_telemetry.cpp), so a user can name their reports. -->
+          <!-- O ID anônimo de telemetria (uwp_telemetry.cpp), para que o usuário possa identificar seus relatórios. -->
           <TextBlock x:Name="TelemetryIdText" FontSize="11" Opacity="0.55" HorizontalAlignment="Right" Margin="0,0,0,2"/>
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
             <StackPanel x:Name="UsbHint" Orientation="Horizontal" Margin="0,0,24,3" Visibility="Collapsed" VerticalAlignment="Top">
               <ProgressRing IsActive="True" Width="16" Height="16" Foreground="#FFE8B04D" Margin="0,0,8,0" VerticalAlignment="Center"/>
-              <TextBlock FontSize="14" Foreground="#FFE8B04D">Reading USB drives...</TextBlock>
+              <TextBlock FontSize="14" Foreground="#FFE8B04D">Lendo unidades USB...</TextBlock>
             </StackPanel>
-            <!-- The app's version: green when it is the newest release on GitHub, orange with a line
-                 under it when a newer one is out (uwp_update.cpp), grey without an answer. -->
+            <!-- A versão do aplicativo: verde quando é o lançamento mais recente no GitHub, laranja com uma linha
+                 embaixo quando há uma versão mais nova (uwp_update.cpp), cinza sem resposta. -->
             <StackPanel Margin="0,0,24,0" VerticalAlignment="Top">
               <TextBlock x:Name="VersionText" FontSize="14" Margin="0,0,0,3" Foreground="#FF9AA0AB"/>
               <TextBlock x:Name="UpdateText" FontSize="11" Foreground="#FFE8B04D" Margin="0,0,0,3" Visibility="Collapsed"/>
@@ -66,7 +66,7 @@
           </DataTemplate>
         </Pivot.HeaderTemplate>
 
-        <PivotItem Header="Games" Margin="0">
+        <PivotItem Header="Jogos" Margin="0">
           <Grid>
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="3*"/>
@@ -74,10 +74,10 @@
             </Grid.ColumnDefinitions>
             <ListView x:Name="GamesList" SelectionMode="Single" IsItemClickEnabled="True"
                       SingleSelectionFollowsFocus="True" Margin="0,8,12,0"/>
-            <!-- Visible from the start: the app is still starting until the first sync sets it. -->
+            <!-- Visível desde o início: o aplicativo ainda está iniciando até que a primeira sincronização o configure. -->
             <StackPanel x:Name="GamesBusy" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,16,0,0">
               <ProgressRing IsActive="True" Width="28" Height="28" Margin="0,0,14,0" VerticalAlignment="Center"/>
-              <TextBlock FontSize="15" Opacity="0.7" VerticalAlignment="Center">Looking for games...</TextBlock>
+              <TextBlock FontSize="15" Opacity="0.7" VerticalAlignment="Center">Procurando jogos...</TextBlock>
             </StackPanel>
             <TextBlock x:Name="GamesEmpty" Grid.ColumnSpan="2" Margin="0,16,0,0" FontSize="15" Opacity="0.7"
                        TextWrapping="Wrap" Visibility="Collapsed"/>
@@ -103,304 +103,26 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                   </Grid.RowDefinitions>
-                  <TextBlock Grid.Row="0" FontSize="12" Opacity="0.6" Margin="0,0,0,4">Title ID</TextBlock>
+                  <TextBlock Grid.Row="0" FontSize="12" Opacity="0.6" Margin="0,0,0,4">ID do Jogo</TextBlock>
                   <TextBlock x:Name="DetailId" Grid.Row="0" Grid.Column="1" FontSize="12" TextTrimming="CharacterEllipsis"/>
-                  <TextBlock Grid.Row="1" FontSize="12" Opacity="0.6" Margin="0,0,0,4">Type</TextBlock>
+                  <TextBlock Grid.Row="1" FontSize="12" Opacity="0.6" Margin="0,0,0,4">Tipo</TextBlock>
                   <TextBlock x:Name="DetailKind" Grid.Row="1" Grid.Column="1" FontSize="12" TextTrimming="CharacterEllipsis"/>
-                  <TextBlock Grid.Row="2" FontSize="12" Opacity="0.6" Margin="0,0,0,4">Version</TextBlock>
+                  <TextBlock Grid.Row="2" FontSize="12" Opacity="0.6" Margin="0,0,0,4">Versão</TextBlock>
                   <TextBlock x:Name="DetailVersion" Grid.Row="2" Grid.Column="1" FontSize="12" TextTrimming="CharacterEllipsis"/>
-                  <TextBlock Grid.Row="3" FontSize="12" Opacity="0.6" Margin="0,0,0,4">Location</TextBlock>
+                  <TextBlock Grid.Row="3" FontSize="12" Opacity="0.6" Margin="0,0,0,4">Local</TextBlock>
                   <TextBlock x:Name="DetailSource" Grid.Row="3" Grid.Column="1" FontSize="12" TextTrimming="CharacterEllipsis"/>
                 </Grid>
-                <TextBlock FontSize="15" Foreground="{ThemeResource SystemControlForegroundAccentBrush}" Margin="0,10,0,0">A  Start</TextBlock>
+                <TextBlock FontSize="15" Foreground="{ThemeResource SystemControlForegroundAccentBrush}" Margin="0,10,0,0">A  Iniciar</TextBlock>
               </StackPanel>
             </Border>
           </Grid>
         </PivotItem>
 
-        <PivotItem Header="Install" Margin="0">
+        <PivotItem Header="Instalar" Margin="0">
           <Grid>
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto"/>
               <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
-            <TextBlock Margin="0,8,0,10" FontSize="14" Opacity="0.7" TextWrapping="Wrap">Firmware (PS3UPDAT.PUP), packages (.pkg) and licenses (.rap) from the app's LocalState, LocalState\firmware or LocalState\packages folder, or from a USB drive (root, PS3\UPDATE, PKG, packages or exdata folder).</TextBlock>
-            <StackPanel x:Name="InstallBusy" Grid.Row="1" Orientation="Horizontal" VerticalAlignment="Top">
-              <ProgressRing IsActive="True" Width="28" Height="28" Margin="0,0,14,0" VerticalAlignment="Center"/>
-              <TextBlock FontSize="15" Opacity="0.7" VerticalAlignment="Center">Looking for files...</TextBlock>
-            </StackPanel>
-            <TextBlock x:Name="InstallEmpty" Grid.Row="1" FontSize="15" Foreground="#FFE8B04D" Visibility="Collapsed"/>
-            <ListView x:Name="InstallList" Grid.Row="1" SelectionMode="Single" IsItemClickEnabled="True"
-                      SingleSelectionFollowsFocus="True"/>
-          </Grid>
-        </PivotItem>
-
-        <PivotItem Header="Settings" Margin="0">
-          <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <StackPanel x:Name="SettingsStack" Margin="0,8,12,0"/>
-          </ScrollViewer>
-        </PivotItem>
-      </Pivot>
-
-      <StackPanel Grid.Row="2" Margin="0,6,0,0">
-        <TextBlock x:Name="StatusText" FontSize="14" TextTrimming="CharacterEllipsis" Margin="0,0,0,4"/>
-        <TextBlock FontSize="13" Opacity="0.6">A  Select      Y  Refresh      LB / RB  Tabs      In a game: View + Menu for the pause menu</TextBlock>
-      </StackPanel>
-    </Grid>
-  </Grid>
-
-  <!-- Boot / compile progress, over a dark backdrop (over the game picture while it compiles). -->
-  <Grid x:Name="LoadingLayer" Visibility="Collapsed">
-    <Rectangle x:Name="LoadingBackdrop" Fill="#FF202020"/>
-    <StackPanel VerticalAlignment="Center" Margin="48,0,48,0">
-      <TextBlock x:Name="LoadingTitle" FontSize="22" FontWeight="SemiBold"/>
-      <ProgressBar x:Name="LoadingBar" Maximum="100" Margin="0,18,0,18"/>
-      <TextBlock x:Name="LoadingDetail" FontSize="14" Opacity="0.7" TextWrapping="Wrap"/>
-    </StackPanel>
-  </Grid>
-
-  <!-- Firmware / package install progress. -->
-  <Grid x:Name="JobLayer" Visibility="Collapsed">
-    <Rectangle Fill="#99000000"/>
-    <Border Background="#FF2B2B2B" BorderBrush="#FF3A3A3A" BorderThickness="1" CornerRadius="8"
-            HorizontalAlignment="Center" VerticalAlignment="Center" Padding="24" Width="560">
-      <StackPanel>
-        <TextBlock x:Name="JobTitle" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap"/>
-        <ProgressBar x:Name="JobBar" Maximum="100" Margin="0,18,0,12"/>
-        <TextBlock x:Name="JobDetail" FontSize="14" Opacity="0.7"/>
-      </StackPanel>
-    </Border>
-  </Grid>
-
-  <!-- In-game pause menu (View + Menu, the PS button): a pane that slides in from the left over the
-       dimmed game. Main page: the actions; Settings opens a page of groups, each group its settings. -->
-  <Grid x:Name="PauseLayer" Visibility="Collapsed">
-    <Rectangle Fill="#73000000"/>
-    <Border x:Name="PausePane" HorizontalAlignment="Left" Width="540" Background="#F21F1F1F"
-            BorderBrush="#FF3A3A3A" BorderThickness="0,0,1,0" Padding="32,36,24,24">
-      <Border.Transitions>
-        <TransitionCollection>
-          <EntranceThemeTransition FromHorizontalOffset="-540" FromVerticalOffset="0"/>
-        </TransitionCollection>
-      </Border.Transitions>
-      <Grid>
-        <Grid.RowDefinitions>
-          <RowDefinition Height="Auto"/>
-          <RowDefinition Height="*"/>
-          <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
-        <StackPanel Grid.Row="0" Margin="0,0,0,18">
-          <TextBlock x:Name="PauseTitle" FontSize="26" FontWeight="SemiBold">Paused</TextBlock>
-          <TextBlock x:Name="PauseSubtitle" FontSize="13" Opacity="0.6" TextWrapping="Wrap" Margin="0,4,0,0"/>
-        </StackPanel>
-        <ScrollViewer x:Name="PauseScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto">
-          <Grid Margin="0,0,12,0">
-            <StackPanel x:Name="PauseMain">
-              <StackPanel.ChildrenTransitions>
-                <TransitionCollection>
-                  <EntranceThemeTransition FromHorizontalOffset="-40" FromVerticalOffset="0" IsStaggeringEnabled="True"/>
-                </TransitionCollection>
-              </StackPanel.ChildrenTransitions>
-              <Button x:Name="PauseResume" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,6" Padding="14,12,14,12">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                  </Grid.ColumnDefinitions>
-                  <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE768;" FontSize="20" Margin="0,0,16,0" VerticalAlignment="Center"/>
-                  <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="16">Resume game</TextBlock>
-                </Grid>
-              </Button>
-              <Button x:Name="PauseRestart" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,6" Padding="14,12,14,12">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                  </Grid.ColumnDefinitions>
-                  <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE72C;" FontSize="20" Margin="0,0,16,0" VerticalAlignment="Center"/>
-                  <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="16">Restart game</TextBlock>
-                </Grid>
-              </Button>
-              <Button x:Name="PauseTrophies" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,6" Padding="14,12,14,12">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                  </Grid.ColumnDefinitions>
-                  <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE734;" FontSize="20" Margin="0,0,16,0" VerticalAlignment="Center"/>
-                  <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="16">Trophies</TextBlock>
-                </Grid>
-              </Button>
-              <Button x:Name="PauseFriends" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,6" Padding="14,12,14,12">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                  </Grid.ColumnDefinitions>
-                  <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE716;" FontSize="20" Margin="0,0,16,0" VerticalAlignment="Center"/>
-                  <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="16">Friends</TextBlock>
-                </Grid>
-              </Button>
-              <Button x:Name="PauseScreenshot" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,6" Padding="14,12,14,12">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                  </Grid.ColumnDefinitions>
-                  <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE722;" FontSize="20" Margin="0,0,16,0" VerticalAlignment="Center"/>
-                  <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="16">Take a screenshot</TextBlock>
-                </Grid>
-              </Button>
-              <Button x:Name="PauseSaveState" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,6" Padding="14,12,14,12">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                  </Grid.ColumnDefinitions>
-                  <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE74E;" FontSize="20" Margin="0,0,16,0" VerticalAlignment="Center"/>
-                  <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="16">Save state</TextBlock>
-                </Grid>
-              </Button>
-              <Button x:Name="PauseLoadState" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,6" Padding="14,12,14,12">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                  </Grid.ColumnDefinitions>
-                  <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE81C;" FontSize="20" Margin="0,0,16,0" VerticalAlignment="Center"/>
-                  <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="16">Load a save state</TextBlock>
-                </Grid>
-              </Button>
-              <Button x:Name="PauseSettings" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,6" Padding="14,12,14,12">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                  </Grid.ColumnDefinitions>
-                  <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE713;" FontSize="20" Margin="0,0,16,0" VerticalAlignment="Center"/>
-                  <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="16">Settings</TextBlock>
-                  <FontIcon Grid.Column="2" FontFamily="Segoe MDL2 Assets" Glyph="&#xE76C;" FontSize="12" Opacity="0.6" VerticalAlignment="Center"/>
-                </Grid>
-              </Button>
-              <Button x:Name="PauseStop" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,12,0,0" Padding="14,12,14,12">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                  </Grid.ColumnDefinitions>
-                  <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE71A;" FontSize="20" Margin="0,0,16,0" VerticalAlignment="Center"/>
-                  <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="16">Stop game</TextBlock>
-                </Grid>
-              </Button>
-            </StackPanel>
-            <StackPanel x:Name="PauseSettingsStack" Visibility="Collapsed">
-              <StackPanel.ChildrenTransitions>
-                <TransitionCollection>
-                  <EntranceThemeTransition FromHorizontalOffset="40" FromVerticalOffset="0" IsStaggeringEnabled="True"/>
-                </TransitionCollection>
-              </StackPanel.ChildrenTransitions>
-            </StackPanel>
-          </Grid>
-        </ScrollViewer>
-        <TextBlock Grid.Row="2" FontSize="13" Opacity="0.55" Margin="0,12,0,0">A  Select      B  Back</TextBlock>
-      </Grid>
-    </Border>
-  </Grid>
-
-  <!-- A screen of the menu logic: a list of actions under a status text (Settings > RPCN account, and
-       the pause menu's trophies, friends and save states, so declared after the pause menu). -->
-  <Grid x:Name="ScreenLayer" Visibility="Collapsed">
-    <Grid.Background>
-      <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-        <GradientStop Color="#FF1E2229" Offset="0"/>
-        <GradientStop Color="#FF202020" Offset="0.55"/>
-        <GradientStop Color="#FF221F22" Offset="1"/>
-      </LinearGradientBrush>
-    </Grid.Background>
-    <Grid Margin="48,27,48,27">
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto"/>
-        <RowDefinition Height="Auto"/>
-        <RowDefinition Height="*"/>
-        <RowDefinition Height="Auto"/>
-      </Grid.RowDefinitions>
-      <TextBlock x:Name="ScreenTitle" Grid.Row="0" FontSize="28" FontWeight="SemiBold"/>
-      <TextBlock x:Name="ScreenHeader" Grid.Row="1" FontSize="15" Opacity="0.75" TextWrapping="Wrap" Margin="0,12,0,16" MaxWidth="1100" HorizontalAlignment="Left"/>
-      <ScrollViewer x:Name="ScreenScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto">
-        <StackPanel x:Name="ScreenItems" MaxWidth="900" HorizontalAlignment="Left" Margin="0,0,12,0"/>
-      </ScrollViewer>
-      <TextBlock Grid.Row="3" FontSize="13" Opacity="0.55" Margin="0,6,0,0">A  Select      B  Back</TextBlock>
-    </Grid>
-  </Grid>
-
-  <!-- A text field the menu logic asks for (RPCN account details). A on the field opens the system keyboard. -->
-  <Grid x:Name="TextLayer" Visibility="Collapsed">
-    <Rectangle Fill="#99000000"/>
-    <Border Background="#FF2B2B2B" BorderBrush="#FF3A3A3A" BorderThickness="1" CornerRadius="8"
-            HorizontalAlignment="Center" VerticalAlignment="Center" Width="620">
-      <StackPanel>
-        <StackPanel Padding="24,24,24,8">
-          <TextBlock x:Name="TextTitle" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap"/>
-          <TextBlock x:Name="TextPrompt" FontSize="15" Opacity="0.75" TextWrapping="Wrap" Margin="0,10,0,14"/>
-          <StackPanel x:Name="TextFieldHost"/>
-          <TextBlock x:Name="TextError" FontSize="14" Foreground="#FFFF99A4" TextWrapping="Wrap" Margin="0,8,0,0" Visibility="Collapsed"/>
-          <TextBlock FontSize="13" Opacity="0.6" Margin="0,10,0,8" TextWrapping="Wrap">A on the field opens the keyboard. B cancels.</TextBlock>
-        </StackPanel>
-        <Grid Background="#FF1C1C1C" Padding="24" CornerRadius="0,0,8,8">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="*"/>
-          </Grid.ColumnDefinitions>
-          <Button x:Name="TextOk" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" Margin="0,0,4,0" Content="Done"/>
-          <Button x:Name="TextCancel" Grid.Column="1" HorizontalAlignment="Stretch" Margin="4,0,0,0" Content="Cancel"/>
-        </Grid>
-      </StackPanel>
-    </Border>
-  </Grid>
-
-  <!-- Message / confirmation. Declared after the pause menu so it draws on top of it
-       (e.g. the "Stop the game?" confirmation opened from the pause menu). -->
-  <Grid x:Name="DialogLayer" Visibility="Collapsed">
-    <Rectangle Fill="#99000000"/>
-    <Border Background="#FF2B2B2B" BorderBrush="#FF3A3A3A" BorderThickness="1" CornerRadius="8"
-            HorizontalAlignment="Center" VerticalAlignment="Center" Width="620">
-      <StackPanel>
-        <StackPanel Padding="24,24,24,16">
-          <TextBlock x:Name="DialogTitle" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap"/>
-          <ScrollViewer MaxHeight="330" Margin="0,12,0,0" VerticalScrollBarVisibility="Auto">
-            <TextBlock x:Name="DialogText" FontSize="15" Opacity="0.75" TextWrapping="Wrap"/>
-          </ScrollViewer>
-        </StackPanel>
-        <Grid Background="#FF1C1C1C" Padding="24" CornerRadius="0,0,8,8">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="*"/>
-          </Grid.ColumnDefinitions>
-          <Button x:Name="DialogAccept" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" Margin="0,0,4,0"/>
-          <Button x:Name="DialogCancel" Grid.Column="1" HorizontalAlignment="Stretch" Margin="4,0,0,0" Content="Cancel"/>
-        </Grid>
-      </StackPanel>
-    </Border>
-  </Grid>
-
-  <!-- Fatal emulator error. -->
-  <Grid x:Name="ErrorLayer" Visibility="Collapsed" Background="#FF202020">
-    <Border Background="#FF442726" BorderBrush="#FF5C3330" BorderThickness="1" CornerRadius="8" Padding="24"
-            VerticalAlignment="Center" Margin="48,0,48,0">
-    <StackPanel>
-      <TextBlock FontSize="22" FontWeight="SemiBold">Emulation error</TextBlock>
-      <TextBlock x:Name="ErrorText" FontSize="15" Margin="0,16,0,16" TextWrapping="Wrap"/>
-      <TextBlock FontSize="13" Opacity="0.7" TextWrapping="Wrap">The full log is LocalState/rpcs3/RPCS3.log (RPCS3.prev.log after the app restarts).</TextBlock>
-    </StackPanel>
-    </Border>
-  </Grid>
-</Grid>
+            <TextBlock Margin="0,8,0,10" FontSize="14" Opacity="0.7" TextWrapping="Wrap">Firmware (PS3UPDAT.PUP), pacotes (.pkg) e licenças (.rap) da pasta LocalState, LocalState\firmware ou LocalState\packages do aplicativo, ou de uma unidade USB (pasta raiz, PS3\UPDATE, PKG, packages ou exdata).</TextBlock>
+            <StackPanel x:Name="InstallBusy" Grid.Row="1" Orientation=
