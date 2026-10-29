@@ -1,7 +1,7 @@
 RPCS3 for Xbox (UWP)
 ====================
 
-Could I please have a little favor for the ones who fork this Repo, either through git or by downloading it: PLEASE remove telemetry code from your forks. There is nothing hidden in how telemetry works, the code is public, but you are spamming my telemetry server with builds of yours which don’t even lunch properly… If you are already using AI even for the Builds then Please at least ask it to stop sending random data to my servers. Thanks, Emelin. 
+Could I please have a little favor from the ones who fork this Repo, either through git or by downloading it: PLEASE remove telemetry code from your forks. There is nothing hidden in how telemetry works, the code is public, but you are spamming my telemetry server with builds of yours which don’t even launch properly… If you are already using AI even for the Builds then Please at least ask it to stop sending random data to my servers. Thanks, Emelin. 
 
 > **Proof of concept.** This is an unofficial, experimental port of the [RPCS3](https://rpcs3.net)
 > PlayStation 3 emulator to Xbox Series X|S as a UWP app (Developer Mode). It is **not** supported by
