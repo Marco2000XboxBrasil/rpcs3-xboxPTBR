@@ -206,7 +206,7 @@ dzn_probe_detail_RSSetScissorRects(UINT n, const D3D12_RECT *r)
  * Always on (no DZN_PROBE needed): the arguments of the last copies are kept, and the ones on a
  * command list that fails to close are printed with their resources, since a copy is usually
  * among its last calls (L.A. Noire, the resolution-scale change). */
-#define DZN_COPY_RING 64
+#define DZN_COPY_RING 256
 
 struct dzn_trace_copy {
    const void *list;
@@ -296,11 +296,34 @@ dzn_trace_check_copy(const void *list, const D3D12_TEXTURE_COPY_LOCATION *dst, U
    }
    if (!why)
       return;
-   if (__atomic_fetch_add(&dzn_copy_invalid, 1, __ATOMIC_RELAXED) >= 16)
+   if (__atomic_fetch_add(&dzn_copy_invalid, 1, __ATOMIC_RELAXED) >= 64)
       return;
    mesa_loge("dzn: invalid CopyTextureRegion (%s) on list %p at trace seq %u:", why, list,
              __atomic_load_n(&dzn_trace_pos, __ATOMIC_RELAXED) - 1);
    dzn_probe_detail_CopyTextureRegion(dst, x, y, z, src, box);
+}
+
+/* Transition barriers name one subresource (or all of them); an index past mips x layers x planes,
+ * such as a stencil plane on a color image, breaks the command list the same way a bad copy does. */
+void
+dzn_trace_check_barriers(const void *list, UINT n, const D3D12_RESOURCE_BARRIER *b)
+{
+   for (UINT i = 0; i < n; i++) {
+      if (b[i].Type != D3D12_RESOURCE_BARRIER_TYPE_TRANSITION ||
+          b[i].Transition.Subresource == D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES)
+         continue;
+      D3D12_RESOURCE_DESC d;
+      b[i].Transition.pResource->lpVtbl->GetDesc(b[i].Transition.pResource, &d);
+      const UINT count = d.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER ? 1 :
+         (d.MipLevels ? d.MipLevels : 1) * (d.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D ? 1 : d.DepthOrArraySize) *
+         dzn_trace_planes(d.Format);
+      if (b[i].Transition.Subresource < count ||
+          __atomic_fetch_add(&dzn_copy_invalid, 1, __ATOMIC_RELAXED) >= 64)
+         continue;
+      mesa_loge("dzn: invalid ResourceBarrier [%u] (subresource %u of %u) on list %p at trace seq %u:", i,
+                b[i].Transition.Subresource, count, list, __atomic_load_n(&dzn_trace_pos, __ATOMIC_RELAXED) - 1);
+      dzn_probe_detail_ResourceBarrier(1, &b[i]);
+   }
 }
 
 void
@@ -327,7 +350,7 @@ dzn_trace_copy_buf(const void *list, ID3D12Resource *dst, UINT64 dst_off, ID3D12
    dst->lpVtbl->GetDesc(dst, &dd);
    src->lpVtbl->GetDesc(src, &sd);
    if ((dst_off + size > dd.Width || src_off + size > sd.Width || !size) &&
-       __atomic_fetch_add(&dzn_copy_invalid, 1, __ATOMIC_RELAXED) < 16)
+       __atomic_fetch_add(&dzn_copy_invalid, 1, __ATOMIC_RELAXED) < 64)
       mesa_loge("dzn: invalid CopyBufferRegion on list %p at trace seq %u: %llu bytes, dst %p+%llu of %llu, src %p+%llu of %llu",
                 list, __atomic_load_n(&dzn_trace_pos, __ATOMIC_RELAXED) - 1, (unsigned long long)size,
                 (void *)dst, (unsigned long long)dst_off, (unsigned long long)dd.Width,
@@ -347,7 +370,7 @@ dzn_trace_dump_copies(const void *list)
    uint32_t end = __atomic_load_n(&dzn_copy_pos, __ATOMIC_RELAXED);
    uint32_t begin = end > DZN_COPY_RING ? end - DZN_COPY_RING : 0;
    unsigned shown = 0;
-   for (uint32_t i = end; i-- > begin && shown < 8;) {
+   for (uint32_t i = end; i-- > begin && shown < 32;) {
       const struct dzn_trace_copy *c = &dzn_copy_ring[i % DZN_COPY_RING];
       if (__atomic_load_n(&c->list, __ATOMIC_ACQUIRE) != list)
          continue;
