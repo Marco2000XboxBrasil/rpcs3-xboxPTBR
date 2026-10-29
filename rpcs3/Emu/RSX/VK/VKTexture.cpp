@@ -568,6 +568,18 @@ namespace vk
 			return;
 		}
 
+#ifdef RPCS3_UWP
+		// Dozen copies each source aspect into the same aspect of the destination, so a
+		// depth-stencil -> color copy writes the stencil to plane 1 of a one-plane color image.
+		// D3D12 rejects that copy and the whole command list fails to close (E_INVALIDARG, shown as
+		// "Out of host memory"). Reinterpret the bits through a buffer instead.
+		if ((src->aspect() ^ dst->aspect()) & VK_IMAGE_ASPECT_COLOR_BIT)
+		{
+			copy_image_typeless(cmd, src, dst, src_rect, dst_rect, mip_layers, src_transfer_mask, dst_transfer_mask);
+			return;
+		}
+#endif
+
 		ensure(!src_rect.is_flipped() && !dst_rect.is_flipped()); //<- Flip conversion must be handled by the caller.
 
 		VkImageSubresourceLayers a_src =
